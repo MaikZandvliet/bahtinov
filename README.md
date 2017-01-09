@@ -1,4 +1,5 @@
 ================================================================
+                         MeerLICHT 2016-2017
                          Bahtinov script
                          Based on Python2
              Requires additional python modules
