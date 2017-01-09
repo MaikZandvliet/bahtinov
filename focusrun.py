@@ -29,6 +29,7 @@ import functools
 import focusfunctions
 import Bahtinov
 from pylab import rcParams
+# Set figure parameters and date
 rcParams['figure.figsize'] = 14, 8
 rc('font', size=12)
 rc('legend', fontsize=12)
