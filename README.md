@@ -1,4 +1,5 @@
-Contains script for MeerLICHT
+Contains script for MeerLICHT focusrun
+
 Required additional python modules:
 * numpy, scipy, pylab, astropy
 * cv2, sewpy, shapely, photutils, peakutils
