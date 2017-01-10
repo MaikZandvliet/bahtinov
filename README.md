@@ -6,4 +6,4 @@ Required additional python modules:
 * kapteyn (https://www.astro.rug.nl/software/kapteyn/)
 * focusfunctions (in directory)
 
-First draft implementing the Bahtinov technique to determine the focus. Several manual parameters must be used in this version. Will be further updated after images obtained from observations in Nijmegen having tracking available.
+First draft implementing the Bahtinov technique to determine the focus. Several manual parameters must be used in this version. Will be further updated after images obtained from observations in Nijmegen having tracking are available.
