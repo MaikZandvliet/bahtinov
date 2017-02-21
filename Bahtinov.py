@@ -96,14 +96,7 @@ class Bahtinov:
         background = sep.Background(image.data_new)
         threshold = background.globalrms * 10
         image.data_new = image.data_new - background
-        fig = figure()
-        axis = fig.add_subplot(111)
-        axis.imshow(image.data_new, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
-        #show()
         source = sep.extract(image.data_new, threshold)
-        axis.scatter(source['x'], source['y'])
-        plt.close()
-        #show()
         image.x, image.y = source['x'][np.where(source['flux'] == np.max(source['flux']))], source['y'][np.where(source['flux'] == np.max(source['flux']))]
 
 
