@@ -8,27 +8,13 @@
 from __future__ import division
 import time
 import datetime
-import os
-import subprocess
-import glob
-import numpy as np
-from tqdm import *
-import matplotlib
-import matplotlib.pyplot as plt
-import cv2
-from matplotlib.lines import Line2D
-from shapely.geometry import LineString
-import scipy.optimize
-from matplotlib.pyplot import figure, show, rc
-from matplotlib.patches import Polygon
-from mpl_toolkits.mplot3d import Axes3D
-from astropy.io import fits
-from matplotlib.ticker import AutoMinorLocator
-from kapteyn import kmpfit
-import functools
-import focusfunctions
-import Bahtinov
+import sep
+import sewpy
+from tiptilt import image
 from pylab import rcParams
+import pyfits
+from matplotlib.pyplot import figure, show, rc
+from matplotlib import patches
 # Set figure parameters and date
 rcParams['figure.figsize'] = 14, 8
 rc('font', size=12)
@@ -40,16 +26,49 @@ today_utc_time = time.strftime('%c', time.gmtime(time.time()))
 print '=============== Focus Run Analysis Started ==============='
 print today_utc_time
 
+def select_sources(file, threshold_factor = 70, minimum_flux = 1e5, window_size = 100):
+    objects = []
+    name = file.split('/')[-1].split('.')[0]
+    fitsfile = pyfits.open(file, uint=False)
+    fitsfile.info()
+    original = fitsfile[1].data
+    data, background =  image.subtract_background(original)
+    sources = image.select_sources(data, background, threshold_factor = threshold_factor, minimum_flux = minimum_flux, window_size = window_size)
+    objects.append([sources['x'], sources['x2'], sources['y'], sources['y2']])
+
+    X,XX,Y,YY = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+    ratio = data.shape[0] * 1.0 / data.shape[1]
+    fig = figure(figsize=(10,ratio *10))
+    axis = fig.add_subplot(111)
+    axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
+    axis.scatter(X,Y)
+    for i,x in enumerate(sources):
+        window = image.source_window(x, window_size)
+        axis.add_patch(
+            patches.Rectangle(
+                (window[1].start, window[0].start),
+                window[1].stop - window[1].start,
+                window[0].stop - window[0].start,
+                color = 'r',
+                fill=False
+            )
+        )
+    #plt.close()
+    #show()
+
+    return np.asarray(objects)[0]
+
+
+
 def FocusRunResults():
-    data = np.loadtxt('Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
-    #data = np.loadtxt('Focusrun/2016-12-22/Results/FocusResults.txt')
+    data = np.loadtxt(directory_prefix +'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
     image = data[:,0] ; defocus = data[:,1] ; focus = data[:,2] ; focuserr = data[:,3]
     xp = np.linspace(min(defocus), max(defocus), 100)
     z = np.polyfit(defocus, focus, 1)
-    fitobj = kmpfit.Fitter(residuals=focusfunctions.linfitresiduals, data=(defocus, focus, focuserr),
+    fitobj = kmpfit.Fitter(residuals=functions.linfitresiduals, data=(defocus, focus, focuserr),
                            xtol=1e-12, gtol=1e-12)
     fitobj.fit(params0=z)
-    print "\n=================== Results kmpfit ==================="
+    print "\n=================== Results linear fit ==================="
     print "Fitted parameters:      ", fitobj.params
     print "Covariance errors:      ", fitobj.xerror
     print "Standard errors:        ", fitobj.stderr
@@ -62,7 +81,7 @@ def FocusRunResults():
 
     dfdp = [1, xp]
     confprob = 95.0
-    ydummy, upperband, lowerband = focusfunctions.confidence_band(xp, dfdp, confprob, fitobj, focusfunctions.linfit)
+    ydummy, upperband, lowerband = functions.confidence_band(xp, dfdp, confprob, fitobj, functions.linfit)
     verts = zip(xp, lowerband) + zip(xp[::-1], upperband[::-1])
     bestfocus = -fitobj.params[0]/fitobj.params[1]
     bestfocusvar = bestfocus**2 * ( (fitobj.stderr[0] / fitobj.params[0])**2 + (fitobj.stderr[1] / fitobj.params[1])**2 - 2 * (fitobj.covar[0,1]/(fitobj.params[0]*fitobj.params[1])))
@@ -70,8 +89,9 @@ def FocusRunResults():
     axis.xaxis.set_minor_locator(AutoMinorLocator())
     axis.yaxis.set_minor_locator(AutoMinorLocator())
     axis.errorbar(defocus,focus, yerr = focuserr, fmt = 'ko')
-    axis.annotate('Best offset M2 = %.2f $\pm$ %.3f $\\mu m$' %(bestfocus, bestfocusvar**.5), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
-    axis.plot(xp, focusfunctions.linfit(fitobj.params,xp), color = 'r', ls='--', lw=2,
+    axis.annotate('Best offset M2 = %.2f $\pm$ %.3f $\\mu m$' %(bestfocus, bestfocusvar**.5),
+        xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
+    axis.plot(xp, functions.linfit(fitobj.params,xp), color = 'r', ls='--', lw=2,
         label = 'linear fit \n $\chi ^2_{reduced}$ = %.3f' %(fitobj.rchi2_min))
     axis.set_title('Focus run M2 vs calculated defocus', fontsize = 14)
     axis.set_xlabel('Offset M2 [$\mu m$]')
@@ -80,52 +100,70 @@ def FocusRunResults():
     axis.grid(True)
     axis.legend(loc=4,fancybox=True, shadow=True, ncol=4, borderpad=1.01)
     fig.tight_layout()
-    fig.savefig('Focusrun/' + today_utc_date + '/Results/Focusrun_defocus_results.png')
+    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/Focusrun_defocus_results.png')
     #show()
 
-def Exclusionzones():
-    thresholds = np.loadtxt('Focusrun/Results/Focusthresholds.txt')
-    inner = thresholds[:,1]
-    outer = thresholds[:,0]
-    #inner = np.concatenate([thresholds[:,1],thresholds[:,2]])
-    #outer = np.concatenate([thresholds[:,0],thresholds[:,3]])
-    fig, axis = plt.subplots()
-    axis.scatter(inner,outer, color = 'b', marker = 'o')
-    axis.axvline(40)
-    triangle = Polygon([(0, 0), (140, 0), (140, 140)], closed=True, fc='c', ec='c', alpha=0.3)
-    axis.add_patch(triangle)
-    axis.set_ylim(0,140) ; axis.set_xlim(0,40)
-    axis.set_xlabel('Inner zone') ; axis.set_ylabel('Outer zone')
-    fig.tight_layout()
-    #show()
 
 # ====================================================================================
 #                                   Start script
 # ====================================================================================
-Offset = [100,110,120,130,140,150,160,170,180,190,200,200,190,180,170,160,150,140,130,120,110,100]  # Offsets of M2
-directory_prefix = '/media/maik/Maik/MeerLICHT/'
-directory = directory_prefix + 'Data/2016_09_26/Fits_from_raw/New_images/Focusrun/'                 # Directory containing images
-files = glob.glob(directory + '*.fits')
-filescutout = glob.glob(directory_prefix + 'Data/Cutout/*.fits')
+if __name__ == '__main__':
+    import os
+    import subprocess
+    import glob
+    import numpy as np
+    from tqdm import *
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import cv2
+    from matplotlib.lines import Line2D
+    from shapely.geometry import LineString
+    import scipy.optimize
+    from matplotlib.patches import Polygon
+    from mpl_toolkits.mplot3d import Axes3D
+    from astropy.io import fits
+    from matplotlib.ticker import AutoMinorLocator
+    from kapteyn import kmpfit
+    import functools
+    import functions
+    import Bahtinov
+    Offset = [100,110,120,130,140,150,160,170,180,190,200,200,190,180,170,160,150,140,130,120,110,100]  # Offsets of M2
+    directory_prefix = '/media/data/'
+    directory = directory_prefix + 'Bahtinov/'                 # Directory containing images
+    files = sorted(glob.glob(directory + '*test.fits'))
 
-S = 400
-'''
-subprocess.call(('rm Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
-for k in tqdm(xrange(0,len(files))):
-    name = files[k].split('/')[-1].split('.')[0]
-    X_pos, Xerr_pos, Y_pos, Yerr_pos = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
-    subprocess.call(('rm Focusrun/' + today_utc_date + '/Results/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
-    for p in xrange(0,len(X_pos)):
-        Image = Bahtinov.Bahtinov(files[k], X_pos[p], Xerr_pos[p] ,Y_pos[p], Yerr_pos[p], Offset[k], k, p, S)
-        #Image.FindSources()
-        Image.main()
-        #Image.Show()
-'''
-# ====================================================================================
+    window_size = 400
+    for k in tqdm(xrange(0,len(files))):
+        name = files[k].split('/')[-1].split('.')[0]
+        select_sources(files[k])
+        x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt').format(directory_prefix), shell=True)
+        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
+        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
+        for p in xrange(0,len(x)):
+            Image = Bahtinov.Bahtinov(files[k], x[p], x2[p] ,y[p], y2[p], 0, k, p, window_size)
+            Image.main()
 
-FocusRunResults()
-#Exclusionzones()
-subprocess.call(('python CCD.py'), shell=True)
+    # ====================================================================================
+
+    #FocusRunResults()
+    #subprocess.call(('python CCD.py'), shell=True)
+    period = time.time() - start
+    print '\nThe computation time was %.3f seconds\n' %(period)
+    print '=============== Focus Run Analysis Ended ==============='
+
+
+    '''
+    # Single image:
+    file = directory + 'temp_12000x10600_890_test.fits'
+    name = file.split('/')[-1].split('.')[0]
+    window_size = 400
+    offset = 100
+    x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)#select_sources(file)#, window_size = window_size)
+    for p in xrange(0,len(x)):
+        single_file = Bahtinov.Bahtinov(file, x[p], x2[p] ,y[p], y2[p], offset, 0, p, window_size)
+        single_file.main()
+    '''
 
 '''
 bias_nofilter = fits.open('/media/maik/Maik/MeerLICHT/Data/2016_09_21/Fits_from_raw/ML__12000x10600_113.fits')[0].data[400:800,400:800]
@@ -201,7 +239,3 @@ print Focus
 #cv2.imwrite('houghlines3.jpg',data)
 show()
 '''
-
-period = time.time() - start
-print '\nThe computation time was %.3f seconds\n' %(period)
-print '=============== Focus Run Analysis Ended ==============='
