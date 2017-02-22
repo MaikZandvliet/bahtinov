@@ -53,7 +53,7 @@ def select_sources(file, threshold_factor = 70, minimum_flux = 1e5, window_size 
                 fill=False
             )
         )
-    #plt.close()
+    plt.close()
     #show()
 
     return np.asarray(objects)[0]
@@ -135,8 +135,18 @@ if __name__ == '__main__':
     window_size = 400
     for k in tqdm(xrange(0,len(files))):
         name = files[k].split('/')[-1].split('.')[0]
-        select_sources(files[k])
+        fitsfile = pyfits.open(files[k], uint=False)
+        original = fitsfile[1].data
+        data, background =  image.subtract_background(original)
         x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+        ratio = data.shape[0] * 1.0 / data.shape[1]
+        fig = figure(figsize=(10,ratio *10))
+        axis = fig.add_subplot(111)
+        axis.imshow(data-background, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
+        axis.scatter(x,y)
+        plt.close()
+        #show()
+
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
@@ -164,78 +174,3 @@ if __name__ == '__main__':
         single_file = Bahtinov.Bahtinov(file, x[p], x2[p] ,y[p], y2[p], offset, 0, p, window_size)
         single_file.main()
     '''
-
-'''
-bias_nofilter = fits.open('/media/maik/Maik/MeerLICHT/Data/2016_09_21/Fits_from_raw/ML__12000x10600_113.fits')[0].data[400:800,400:800]
-data = np.uint8(fits.open(filescutout[67])[1].data)-bias_nofilter
-#print data.dtype
-data = np.uint8(data - np.min(data)+1)
-#print data.min()
-print np.max(data)
-#data = cv2.imread('/home/maik/Pictures/Bahtinov_mask_example.jpg')
-#gray = cv2.cvtColor(data,cv2.COLOR_BGR2GRAY)
-edges = cv2.Canny(data,5,5)
-lines = cv2.HoughLinesP(image = data, rho = .8, theta = np.pi/500, threshold=70, minLineLength = 150, maxLineGap = 1000)
-
-x, y, x1, y1, theta = [], [], [], [], []
-for i in range(len(lines)):
-    for x_, y_, x1_, y1_ in lines[i]:
-        dy = y_ - y1_
-        dx = x_ - x1_
-        theta_ = np.arctan(dy/dx)
-        theta_ *= 180/np.pi # rads to degs
-
-        x.append(x_)
-        y.append(y_)
-        x1.append(x1_)
-        y1.append(y1_)
-        theta.append(theta_)
-        #cv2.line(data,(x_,y_), (x1_,y1_),(0,0,255),1)
-
-lines = np.column_stack((x,y,x1,y1, theta))
-print lines
-theta1, theta2, theta3 = [], [], []
-central, diag, diag1 = np.zeros((1,4)), np.zeros((1,4)), np.zeros((1,4))
-for index, (x_, y_, x1_, y1_, t_) in enumerate(lines):
-    if abs(t_ - 47) < 1:
-        central = np.vstack((central,(x_, y_, x1_, y1_)))
-        theta1.append(t_)
-    if abs(t_ - 25) < 1:
-        diag = np.vstack((diag, (x_, y_, x1_, y1_)))
-        theta2.append(t_)
-    if abs(t_ - 65) < 1:
-        diag1 = np.vstack((diag1, (x_, y_, x1_, y1_)))
-        theta3.append(t_)
-
-central = np.delete(central, (0), axis=0)
-diag = np.delete(diag, (0), axis=0)
-diag1 = np.delete(diag1, (0), axis=0)
-central = central.mean(axis=0)
-diag = diag.mean(axis=0)
-diag1 = diag1.mean(axis=0)
-Lines = np.vstack((diag, central, diag1))
-print Lines
-fig, axis = plt.subplots(figsize = (10,10))
-for x_, y_, x1_, y1_ in Lines:
-    #cv2.line(data,(x_,y_), (x1_,y1_),(255,0,0),1)
-    axis.imshow(data, cmap='Greys' , origin='lower')
-    axis.set_xlabel('x') ; axis.set_ylabel('y')
-    axis.add_line(Line2D((x_,x1_), (y_,y1_), color = 'r') )
-
-line1 = LineString([(diag[0],diag[1]), (diag[2],diag[3])])
-line2 = LineString([(diag1[0],diag1[1]), (diag1[2],diag1[3])])
-point = line1.intersection(line2)
-line = LineString([(central[0],central[1]), (central[2],central[3])])
-x_, y_ = line1.coords[0]
-x_1, y_1 = line1.coords[1]
-
-a = (y_1-y_)/(x_1-x_)
-b = y_ - a*x_
-#print a,b
-
-Focus =  point.distance(line)
-#focuserr = (std**2 + std1**2 + std2**2)**.5
-print Focus
-#cv2.imwrite('houghlines3.jpg',data)
-show()
-'''

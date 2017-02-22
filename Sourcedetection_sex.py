@@ -59,7 +59,7 @@ if args.image is not None:
         candidates['%s' %parameters[n]] = np.loadtxt('SExtractor/' + str(name) + '.cat.txt', unpack = True)[n]
     # Filter sources having a Kron-like aperture ranging between -15 and -20
     for n in range(len(parameters)-1):
-        data_reduced['%s' %parameters[n]] = candidates['%s' %parameters[n]][(candidates['FLUX_AUTO'] > 2e6) & (candidates['CLASS_STAR'] != 0) & (candidates['X_IMAGE'] != 1162 )]
+        data_reduced['%s' %parameters[n]] = candidates['%s' %parameters[n]][(candidates['FLUX_AUTO'] > 1e5) & (candidates['CLASS_STAR'] != 0) & (candidates['X_IMAGE'] != 1162 )]
     #print data_reduced['X_IMAGE'], data_reduced['Y_IMAGE'], data_reduced['FLUX_AUTO'], data_reduced['CLASS_STAR']
 
     # Saving the filtered data using original image name
@@ -69,7 +69,7 @@ if args.image is not None:
 # Determine positions of sources for all images in path having .fits extension
 if args.path is not None:
     files = glob.glob(args.path+'*test.fits')
-    for i in range(len(files)):
+    for i in xrange(len(files)):
         file = files[i]
         data_reduced = {}
         candidates = {}
@@ -81,7 +81,7 @@ if args.path is not None:
             candidates['%s' %parameters[n]] = np.loadtxt('SExtractor/' + str(name) + '.cat.txt', unpack = True)[n]
         # Filter sources having a Kron-like aperture ranging between -15 and -20
         for n in range(len(parameters)-1):
-            data_reduced['%s' %parameters[n]] = candidates['%s' %parameters[n]][(candidates['FLUX_AUTO'] > 2e6) & (candidates['CLASS_STAR'] != 0) & (candidates['X_IMAGE'] != 1162 )]
+            data_reduced['%s' %parameters[n]] = candidates['%s' %parameters[n]][(candidates['FLUX_AUTO'] > 1e5) & (candidates['CLASS_STAR'] != 0) & (candidates['X_IMAGE'] != 1162 )]
         # Saving the filtered data using original image name per image in path
         data = np.column_stack([data_reduced['X_IMAGE'], data_reduced['X2_IMAGE'], data_reduced['Y_IMAGE'], data_reduced['Y2_IMAGE'], data_reduced['FLUX_AUTO'], data_reduced['FLUXERR_AUTO']])
         np.savetxt('SExtractor/' + str(name) + '_reduced.txt', data)

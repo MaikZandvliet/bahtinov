@@ -37,12 +37,13 @@ print '=============== CCD Fit Started ==============='
 print today_utc_time
 
 class CCDSurface:
-    def __init__(self,name):
+    def __init__(self, name):
+        print name
         self.pixelsize = 9e-3                                                  # 9 micron per pixel to mm per pixel
         self.data = np.loadtxt(directory +'Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt')
         #self.data = np.loadtxt('Focusrun/2016-12-21/Results/FocusResults.txt')
-        self.x = self.data[:,4]*self.pixelsize
-        self.y = self.data[:,5]*self.pixelsize
+        self.x = self.data[:,4]#*self.pixelsize
+        self.y = self.data[:,5]#*self.pixelsize
         self.z = self.data[:,2]
 
     def fitplane(self):
@@ -74,7 +75,20 @@ class CCDSurface:
         fig.savefig(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/Planefit_'+ str(name) +'_front.png')
         axis.view_init(elev=0, azim=180)
         fig.savefig(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/Planefit_'+ str(name) +'_side.png')
+        plt.close()
         #plt.show()
+
+    def ccd_sufrace_contour(self):
+        fig = figure()
+        axis = fig.add_subplot(111)
+        #axis.tripcolor(self.x,self.y,self.z)
+        CS = axis.tricontourf(self.x,self.y,self.z,20)
+        axis.scatter(self.x,self.y)
+        axis.set_xlim(0, 10560)
+        axis.set_ylim(0, 10600)
+        plt.colorbar(CS, shrink = 0.7)
+        fig.tight_layout()
+        #show()
 
 # ====================================================================================
 #                                   Start
@@ -82,8 +96,10 @@ class CCDSurface:
 if __name__ == '__main__':
     directory_prefix = '/media/data/'
     directory = directory_prefix + 'bahtinov_results/'                 # Directory containing images
-    files = glob.glob(directory_prefix + 'Bahtinov/'+ '*test.fits')
-    subprocess.call(('rm ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/' + '/*.png').format(directory_prefix), shell=True)
+    files = sorted(glob.glob(directory_prefix + 'Bahtinov/'+ '*test.fits'))
+    if not os.path.exists(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/'):
+        subprocess.call(('mkdir ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/').format(directory), shell=True)
+    #subprocess.call(('rm ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/' + '/*.png').format(directory_prefix), shell=True)
 
     # ====================================================================================
 
@@ -91,6 +107,7 @@ if __name__ == '__main__':
         name = files[k].split('/')[-1].split('.')[0]
         surface = CCDSurface(name)
         surface.fitplane()
+        surface.ccd_sufrace_contour()
 
     #CCDSurface().FitPlane()
 
