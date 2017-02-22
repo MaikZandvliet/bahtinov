@@ -136,7 +136,7 @@ class Bahtinov:
         return scan
 
     def determine_peakindices(image, data, i):
-        threshold = (np.max(data) * 0.7 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
+        threshold = (np.max(data) * 0.75 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
         peakindex = peakutils.indexes(np.array(data), thres=threshold, min_dist=15 )        # find peaks in the slice/scan
         return peakindex
 
@@ -231,13 +231,7 @@ class Bahtinov:
                         # Try to fit using the guesses obtained from peak detection and append relevant values to position arrays
                         try:
                             fitobj.fit(params0 = parguess)
-                            #print fitobj.params
-                            #fig = figure()
-                            #axis = fig.add_subplot(111)
-                            #axis.plot(scan, linewidth = .5)
-                            #axis.plot(xdata, functions.ThreeLorentzian(xdata, *fitobj.params))
-                            #plt.close()
-                            #show()
+
                             # Distinction between the central and diagonal peaks for left and right half of image
                             if i <= image.x:                                    # Left half of image
                                 if (image.x - 40 < fitobj.params[1] < image.x - 15) :
@@ -344,7 +338,7 @@ class Bahtinov:
             image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
             image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
             image.axis.annotate('Focus distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
-            image.fig.savefig(directory_prefix_work +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/Source_' + str(image.title) + '_' + str(image.X) + '_' + str(image.Y) + '_' + '.png')
+            image.fig.savefig(directory_prefix_work +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
             plt.close()
 
         #If anything goes wrong with fit skip the star
