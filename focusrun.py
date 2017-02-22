@@ -53,7 +53,7 @@ def select_sources(file, threshold_factor = 70, minimum_flux = 1e5, window_size 
                 fill=False
             )
         )
-    #plt.close()
+    plt.close()
     #show()
 
     return np.asarray(objects)[0]
@@ -135,8 +135,19 @@ if __name__ == '__main__':
     window_size = 400
     for k in tqdm(xrange(0,len(files))):
         name = files[k].split('/')[-1].split('.')[0]
-        select_sources(files[k])
+        fitsfile = pyfits.open(files[k], uint=False)
+        original = fitsfile[1].data
+        data, background =  image.subtract_background(original)
         x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+        ratio = data.shape[0] * 1.0 / data.shape[1]
+        fig = figure(figsize=(10,ratio *10))
+        axis = fig.add_subplot(111)
+        axis.imshow(data-background, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
+        axis.scatter(x,y)
+        plt.close()
+        #show()
+
+
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)

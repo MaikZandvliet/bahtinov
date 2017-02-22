@@ -83,7 +83,9 @@ if __name__ == '__main__':
     directory_prefix = '/media/data/'
     directory = directory_prefix + 'bahtinov_results/'                 # Directory containing images
     files = glob.glob(directory_prefix + 'Bahtinov/'+ '*test.fits')
-    subprocess.call(('rm ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/' + '/*.png').format(directory_prefix), shell=True)
+    if not os.path.exists(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/'):
+        subprocess.call(('mkdir ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/').format(directory), shell=True)
+    #subprocess.call(('rm ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/' + '/*.png').format(directory_prefix), shell=True)
 
     # ====================================================================================
 
