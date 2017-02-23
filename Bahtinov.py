@@ -33,11 +33,8 @@ from scipy.optimize import curve_fit
 from shapely.geometry import LineString
 import functions
 
-
-directory_prefix_work = '/media/data/bahtinov_results/'                        # directory prefix set where to save data
 today_utc_date = datetime.datetime.utcnow().strftime('%Y-%m-%d')
 today_utc_time = time.strftime('%c', time.gmtime(time.time()))
-
 
 '''
 Class Bahtinov
@@ -45,7 +42,7 @@ Class Bahtinov
     Some parameters have to be set manually to ensure a fit.
 '''
 class Bahtinov:
-    def __init__(image, image_path, X, Xerr, Y, Yerr, offset, k, p, size_i):
+    def __init__(image, image_path, X, Xerr, Y, Yerr, offset, k, p, size_i, workdir):
         '''
         __init__ :  Defines an image that is used throughout the class
             image_path ; string
@@ -57,6 +54,7 @@ class Bahtinov:
         '''
         bias = fits.open('/media/data/scripts/temp_12000x10600_22_test.fits')
         bias = bias[1].data
+        image.workdir = workdir
         image.image_path  = image_path                                  # full image path
         image.title = image.image_path.split('/')[-1]                   # name of the image with extension
         image.name = image.title.split('.')[0]                          # name of the image without extension
@@ -64,24 +62,24 @@ class Bahtinov:
         image.image = fits.open(image.image_path)                       # opening fits image
         image.data = image.image[1].data                                # image data
         image.X = X ; image.Y = Y                                       # x and y coordinates of star
-        image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star as from SExtractor
-        image.angle = math.radians(20)                                  # angle of the diagnoal gratings from Bahtinov mask
+        image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from SExtractor
+        image.angle = math.radians(20)                                  # angle of the diagnoal gratings of the Bahtinov mask
         image.p = p ; image.k = k                                       # integers used for saving data
         image.offset = offset                                           # M2 offset
 
         # Creates new directories if non-existing
-        if not os.path.exists(directory_prefix_work + 'Focusrun'):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun').format(directory_prefix_work), shell=True)
-        if not os.path.exists(directory_prefix_work + 'Focusrun/' + today_utc_date):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun/' + today_utc_date ).format(directory_prefix_work), shell=True)
-        if not os.path.exists(directory_prefix_work + 'Focusrun/' + today_utc_date + '/Results/'):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun/' + today_utc_date + '/Results').format(directory_prefix_work), shell=True)
-        if not os.path.exists(directory_prefix_work + 'Focusrun/' + today_utc_date + '/Plots/'):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun/' + today_utc_date + '/Plots').format(directory_prefix_work), shell=True)
-        if not os.path.exists(directory_prefix_work + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/'):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name)).format(directory_prefix_work), shell=True)
-        if not os.path.exists(directory_prefix_work + 'Focusrun/' + today_utc_date + '/Results/'+ str(image.name) + '/'):
-            subprocess.call(('mkdir ' + directory_prefix_work + 'Focusrun/' + today_utc_date + '/Results/' + str(image.name)).format(directory_prefix_work), shell=True)
+        if not os.path.exists(workdir + 'Focusrun'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date ).format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Results/'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Results').format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Plots/'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Plots').format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name)).format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Results/'+ str(image.name) + '/'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Results/' + str(image.name)).format(workdir), shell=True)
 
         # Create a cutout image for better data handling and save image with corresponding coordinates from original image
         cutout = Cutout2D(image.data, (X, Y), (size_i, size_i))
@@ -91,9 +89,13 @@ class Bahtinov:
 
         image.data_new = np.asarray(image.data_new, dtype = np.float)
         background = sep.Background(image.data_new)
-        threshold = background.globalrms * 10
+        threshold = background.globalrms * 5
         image.data_new = image.data_new - background
         source = sep.extract(image.data_new, threshold)
+        #print source['flux'][np.where(source['flux'] == np.max(source['flux']))]/background.globalback
+        #plt.imshow(background.back(), interpolation = 'nearest', cmap = 'gray', origin = 'lower')
+        #plt.colorbar()
+        #plt.show()
         image.x, image.y = source['x'][np.where(source['flux'] == np.max(source['flux']))], source['y'][np.where(source['flux'] == np.max(source['flux']))]
 
     def rotate_image(image, data, angle, size):
@@ -189,17 +191,18 @@ class Bahtinov:
             focus = diagonal_line_intersection.distance(line_center) * 9
         return focus
 
-    def main(image):
+    def main(image, star_counter):
         '''
         BahtinovSpikes :    Fits the lines of the Bahtinov spikes by first finding exclusion zones which are unfit to be used for the fit,
                             this is achieved by finding lower and upper thresholds. These are set by the user and can be modified.
         '''
+        image.star_counter = star_counter
         today_utc_date = datetime.datetime.utcnow().strftime('%Y-%m-%d')
 
         x = [] ; x1 = [] ; x2 = [] ; y = [] ; y1= [] ; y2 = [] ; yerr = [] ; yerr1 = [] ; yerr2 = []            # Create empty arrays for positions of diffraction spikes
         xdata = np.linspace(0,len(image.data_new),len(image.data_new))
 
-        outerthreshold, innerthreshold, innerthreshold1, outerthreshold1 = image.calculate_threshold(image.data_new)
+        #outerthreshold, innerthreshold, innerthreshold1, outerthreshold1 = image.calculate_threshold(image.data_new)
         outerthreshold = 50
         innerthreshold = 120
         innerthreshold1 = 170
@@ -217,8 +220,6 @@ class Bahtinov:
                     peakindex = image.determine_peakindices(scan, i)
                     values = [] ; Y = []
                     if len(peakindex) == 0:
-                        print '=================# Error #================='
-                        print 'No clear peaks were found to initate the fit.'
                         break
                     for index_ in peakindex:
                         values.append(scan[index_])
@@ -262,9 +263,6 @@ class Bahtinov:
 
                         # Skip if something went wrong with fit
                         except Exception, mes:
-                            #print '=================# Error #================='
-                            #print 'Something wrong with curve fit:', mes
-                            #print 'This fit is being skipped.'
                             pass
 
         # Fit the arrays (which are the lines of the spikes) by a linear line
@@ -298,31 +296,31 @@ class Bahtinov:
             '''
             Saving stuff
             '''
-            if os.path.exists(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt'):
-                Results = np.loadtxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt')
+            if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt'):
+                Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt')
                 values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
                 Results = np.vstack((Results, values))
-                np.savetxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
 
             else:
                 Results = np.zeros((1,6))
                 Results[0,0] = image.number ; Results[0,1] = image.offset
                 Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
                 Results[0,4] = image.X ; Results[0,5] = image.Y
-                np.savetxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
 
-            if os.path.exists(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
-                Results = np.loadtxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
+            if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
+                Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
                 values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
                 Results = np.vstack((Results, values))
-                np.savetxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
 
             else:
                 Results = np.zeros((1,6))
                 Results[0,0] = image.number ; Results[0,1] = image.offset
                 Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
                 Results[0,4] = image.X ; Results[0,5] = image.Y
-                np.savetxt(directory_prefix_work +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
 
             # Plot star with fitted diffraction spikes
             image.fig, image.axis = plt.subplots(figsize = (10,10))
@@ -338,11 +336,11 @@ class Bahtinov:
             image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
             image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
             image.axis.annotate('Focus distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
-            image.fig.savefig(directory_prefix_work +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
+            image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
             plt.close()
 
         #If anything goes wrong with fit skip the star
         except Exception, mes:
-            #print 'Something wrong with fit: ', mes
-        #    print 'This star was not fitted correctly, going to next star, due to absence of star no data is saved.'
+            image.star_counter += 1
             pass
+        return image.star_counter

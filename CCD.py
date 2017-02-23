@@ -34,7 +34,7 @@ today_utc_date = datetime.datetime.utcnow().strftime('%Y-%m-%d')
 today_utc_time = time.strftime('%c', time.gmtime(time.time()))
 
 print '=============== CCD Fit Started ==============='
-print today_utc_time
+print 'UTC:', today_utc_time
 
 class CCDSurface:
     def __init__(self, name):
