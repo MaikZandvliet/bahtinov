@@ -72,13 +72,13 @@ def FocusRunResults():
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/Focusrun_defocus_results.png')
     #show()
 
-def select_sources(file, threshold_factor = 70, minimum_flux = 1e5, window_size = 100, SNR = 30):
+def select_sources(file, threshold = 30, SNR = 60):
     objects = []
     name = file.split('/')[-1].split('.')[0]
     fitsfile = pyfits.open(file, uint=False)
     original = fitsfile[1].data
     data, background =  image.subtract_background(original)
-    sources = sep.extract(data, 50, err = background.globalrms, minarea = 60)#image.select_sources(data, background, threshold_factor = threshold_factor, minimum_flux = minimum_flux, window_size = window_size)
+    sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 55)
     flux, fluxerr, flag = sep.sum_circle(data, sources['x'], sources['y'], 3.0, err = background.globalrms, gain = 1.0)
     objects.append([sources['x'][np.where(flux / background.globalback > SNR)],
                 sources['x2'][np.where(flux / background.globalback > SNR)],
@@ -86,12 +86,11 @@ def select_sources(file, threshold_factor = 70, minimum_flux = 1e5, window_size 
                 sources['y2'][np.where(flux / background.globalback > SNR)],
                 flux[np.where(flux / background.globalback > SNR)],
                 fluxerr[np.where(flux / background.globalback > SNR)]])
-    #X,XX,Y,YY = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+
     ratio = data.shape[0] * 1.0 / data.shape[1]
     fig = figure(figsize=(10,ratio *10))
     axis = fig.add_subplot(111)
     axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
-    axis.scatter(X,Y)
     for i in range(len(sources)):
         e = Ellipse(xy=(sources['x'][i], sources['y'][i]), width = 50 * sources['a'][i], height = 50 * sources['b'][i], angle = sources['theta'][i] * 180 / np.pi)
         e.set_facecolor('none')

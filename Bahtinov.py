@@ -139,7 +139,7 @@ class Bahtinov:
 
     def determine_peakindices(image, data, i):
         threshold = (np.max(data) * 0.75 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
-        peakindex = peakutils.indexes(np.array(data), thres=threshold, min_dist=15 )        # find peaks in the slice/scan
+        peakindex = peakutils.indexes(np.array(data), thres = threshold, min_dist = 20 )        # find peaks in the slice/scan
         return peakindex
 
     def sort_peaks(image, params, paramstd, i):
@@ -204,8 +204,8 @@ class Bahtinov:
 
         #outerthreshold, innerthreshold, innerthreshold1, outerthreshold1 = image.calculate_threshold(image.data_new)
         outerthreshold = 50
-        innerthreshold = 120
-        innerthreshold1 = 170
+        innerthreshold = 140
+        innerthreshold1 = 150
         outerthreshold1 = 240
 
         '''
