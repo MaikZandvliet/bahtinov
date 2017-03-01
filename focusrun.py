@@ -71,24 +71,23 @@ def FocusRunResults():
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/Focusrun_defocus_results.png')
     #show()
 
-def select_sources(file, threshold = 30, SNR = 160, window_size = 10):
+def select_sources(file, threshold = 30, SNR = 160, window_size = 100):
     objects = []
     fitsfile = pyfits.open(file, uint=False)
     original = fitsfile[1].data
+    original = np.asarray(original, dtype = np.float)
     data, background =  image.subtract_background(original)
-    sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 60)
-    #sources = np.sort(sources, order = 'flux')
+    sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 50)
+    sources = np.sort(sources, order = 'flux')
     #sources = filter(lambda x : image.select_source_in_field(x, data.shape[1], data.shape[0], window_size), sources)
     #sources = filter(lambda x : image.select_source_in_empty_window(x, data, background, threshold , window_size), sources)
     #sources = map(lambda x : x[1], filter(lambda x : image.select_nonoverlapping_windows(x[1], sources[x[0]+1:], window_size), enumerate(sources[:-1])))
     #sources = np.asarray(sources)
-    #print sources['flux'] / ( background.globalback + background.globalrms)
     objects.append([sources['x'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
                 sources['x2'][np.where(sources['flux'] / ( background.globalback + background.globalrms) > SNR)],
                 sources['y'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
                 sources['y2'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
                 sources['flux'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)]])
-
     ratio = data.shape[0] * 1.0 / data.shape[1]
     fig = figure(figsize=(10,ratio *10))
     axis = fig.add_subplot(111)
