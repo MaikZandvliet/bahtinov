@@ -42,10 +42,11 @@ Class Bahtinov
     Some parameters have to be set manually to ensure a fit.
 '''
 class Bahtinov:
-    def __init__(image, image_path, X, Xerr, Y, Yerr, offset, k, p, size_i, workdir):
+    def __init__(image, image_path, name, X, Xerr, Y, Yerr, offset, k, p, size_i, workdir):
         '''
         __init__ :  Defines an image that is used throughout the class
             image_path ; string
+            name ; string of name of file
             X, Y ; coordinates of the center of the star in question
             Xerr, Yerr ; error on coordinates of the center of the star in question
             offset ; offset for M2
@@ -57,12 +58,13 @@ class Bahtinov:
         image.workdir = workdir
         image.image_path  = image_path                                  # full image path
         image.title = image.image_path.split('/')[-1]                   # name of the image with extension
-        image.name = image.title.split('.')[0]                          # name of the image without extension
+        image.name = name                                               # name of the image without extension
         image.number = float(image.title.split('_')[-2])                # image number
         image.image = fits.open(image.image_path)                       # opening fits image
         image.data = image.image[1].data                                # image data
+        image.data = np.asarray(image.data, dtype = np.float)
         image.X = X ; image.Y = Y                                       # x and y coordinates of star
-        image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from SExtractor
+        image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from sep
         image.angle = math.radians(20)                                  # angle of the diagnoal gratings of the Bahtinov mask
         image.p = p ; image.k = k                                       # integers used for saving data
         image.offset = offset                                           # M2 offset
@@ -88,6 +90,7 @@ class Bahtinov:
         image.mean_new, image.median_new, image.std_new = sigma_clipped_stats(image.data_new, sigma=3, iters=5)
 
         image.data_new = np.asarray(image.data_new, dtype = np.float)
+        image.data_new = image.data_new.copy(order = 'C')
         background = sep.Background(image.data_new)
         threshold = background.globalrms * 5
         image.data_new = image.data_new - background
@@ -144,7 +147,7 @@ class Bahtinov:
 
     def sort_peaks(image, params, paramstd, i):
         if i <= image.x:                                    # Left half of image
-            if (image.x - 40 < params[1] < image.x - 15) :
+            if (image.x - 40 < params[1] < image.x - 10) :
                 y.append(params[1])
                 x.append(i)
                 yerr.append(paramstd[1])
@@ -165,7 +168,7 @@ class Bahtinov:
                 y1.append(params[4])
                 x1.append(i)
                 yerr1.append(paramstd[4])
-            if (image.x - 40 < params[1] < image.x - 15) :
+            if (image.x - 40 < params[1] < image.x - 10) :
                 y2.append(params[1])
                 x2.append(i)
                 yerr2.append(paramstd[1])
