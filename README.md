@@ -2,7 +2,7 @@ Contains script for MeerLICHT focusrun
 
 Required additional python modules:
 * numpy, scipy, pylab, astropy
-* cv2, sewpy, shapely, photutils, peakutils
+* cv2, sew, shapely, photutils, peakutils
 * kapteyn (https://www.astro.rug.nl/software/kapteyn/)
 * functions (in directory)
 
