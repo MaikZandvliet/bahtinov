@@ -86,7 +86,7 @@ class Bahtinov:
         # Create a cutout image for better data handling and save image with corresponding coordinates from original image
         cutout = Cutout2D(image.data, (X, Y), (size_i, size_i))
         image.data_new = cutout.data
-        image.data_new = image.rotate_image(image.data_new, -42, size_i)
+        image.data_new = image.rotate_image(image.data_new, 48, size_i)
         image.mean_new, image.median_new, image.std_new = sigma_clipped_stats(image.data_new, sigma=3, iters=5)
 
         image.data_new = np.asarray(image.data_new, dtype = np.float)
@@ -145,34 +145,6 @@ class Bahtinov:
         peakindex = peakutils.indexes(np.array(data), thres = threshold, min_dist = 20 )        # find peaks in the slice/scan
         return peakindex
 
-    def sort_peaks(image, params, paramstd, i):
-        if i <= image.x:                                    # Left half of image
-            if (image.x - 40 < params[1] < image.x - 10) :
-                y.append(params[1])
-                x.append(i)
-                yerr.append(paramstd[1])
-            if (image.x - 10 < params[4] < image.x + 10) :
-                y1.append(params[4])
-                x1.append(i)
-                yerr1.append(paramstd[4])
-            if (image.x + 10 < params[7] < image.x + 40) :
-                y2.append(params[7])
-                x2.append(i)
-                yerr2.append(paramstd[7])
-        if i > image.x:                                     # Right half of image
-            if (image.x + 10 < params[7] < image.x + 40) :
-                y.append(params[7])
-                x.append(i)
-                yerr.append(paramstd[7])
-            if (image.x - 10 < params[4] < image.x + 10) :
-                y1.append(params[4])
-                x1.append(i)
-                yerr1.append(paramstd[4])
-            if (image.x - 40 < params[1] < image.x - 10) :
-                y2.append(params[1])
-                x2.append(i)
-                yerr2.append(paramstd[1])
-        return x, x1, x2, y, y1, y2, yerr, yerr1, yerr2
 
     def calculate_focus_error(image, a, sigma_a, b, sigma_b, c, sigma_c, d, sigma_d):
         sigma_ad = (a*d)**2 * ( (sigma_a/a)**2 + (sigma_d/d)**2 )
@@ -268,6 +240,8 @@ class Bahtinov:
                         except Exception, mes:
                             pass
 
+
+
         # Fit the arrays (which are the lines of the spikes) by a linear line
         fitobj = kmpfit.Fitter(residuals=functions.residuals, data=(np.array(x),np.array(y), np.array(yerr)))
         fitobj1 = kmpfit.Fitter(residuals=functions.residuals1, data=(np.array(x1),np.array(y1), np.array(yerr1)))
@@ -296,52 +270,61 @@ class Bahtinov:
             image.Focus = image.calculate_focus(image.XY, image.XY1, image.XY2)
             image.focuserr = image.calculate_focus_error(image.angle, 0, -image.angle, 0, image.intercept[0], image.std[0], image.intercept2[0], image.std2[0])#(sigma2_y + image.std1**2)**.5
 
+            #while False:
+            if len(x) > 1 and len(x1) > 1 and len(x2) > 1:
+                if np.min(x) > image.x or np.min(x1) > image.x or np.min(x2) > image.x:
+                    print 1/0
+                if np.max(x) < image.x or np.max(x1) < image.x or np.max(x2) < image.x:
+                    print 1/0
+
             '''
             Saving stuff
             '''
-            if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt'):
-                Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt')
-                values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
-                Results = np.vstack((Results, values))
-                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+            if image.focuserr < 1.0:
+                if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt'):
+                    Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
+                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
+                    Results = np.vstack((Results, values))
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
 
+                else:
+                    Results = np.zeros((1,6))
+                    Results[0,0] = image.number ; Results[0,1] = image.offset
+                    Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
+                    Results[0,4] = image.X ; Results[0,5] = image.Y
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+
+                if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
+                    Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
+                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
+                    Results = np.vstack((Results, values))
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+
+                else:
+                    Results = np.zeros((1,6))
+                    Results[0,0] = image.number ; Results[0,1] = image.offset
+                    Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
+                    Results[0,4] = image.X ; Results[0,5] = image.Y
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+
+                # Plot star with fitted diffraction spikes
+                image.fig, image.axis = plt.subplots(figsize = (10,10))
+                image.axis.imshow(image.data_new*(10**7), cmap='Greys' , origin='lower')
+                image.axis.scatter(x,y, s = 20, color = 'r')
+                image.axis.scatter(x1,y1, s = 20, color = 'g')
+                image.axis.scatter(x2,y2, s = 20, color = 'c')
+                image.axis.scatter(image.x, image.y, color = 'r')
+                image.axis.set_xlim(0,len(image.data_new)) ; image.axis.set_ylim(0,len(image.data_new))
+                image.axis.set_xlabel('x') ; image.axis.set_ylabel('y')
+                image.axis.set_title('Bahtinov Source: %s (%.2f, %.2f)' %(image.name, image.X, image.Y))
+                image.axis.plot(zip(*image.XY)[0], zip(*image.XY)[1], color = 'r')
+                image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
+                image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
+                image.axis.annotate('Focus distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
+                image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
+                plt.close()
             else:
-                Results = np.zeros((1,6))
-                Results[0,0] = image.number ; Results[0,1] = image.offset
-                Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
-                Results[0,4] = image.X ; Results[0,5] = image.Y
-                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
-
-            if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
-                Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
-                values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
-                Results = np.vstack((Results, values))
-                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
-
-            else:
-                Results = np.zeros((1,6))
-                Results[0,0] = image.number ; Results[0,1] = image.offset
-                Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
-                Results[0,4] = image.X ; Results[0,5] = image.Y
-                np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
-
-            # Plot star with fitted diffraction spikes
-            image.fig, image.axis = plt.subplots(figsize = (10,10))
-            image.axis.imshow(image.data_new*(10**7), cmap='Greys' , origin='lower')
-            image.axis.scatter(x,y, s = 20, color = 'r')
-            image.axis.scatter(x1,y1, s = 20, color = 'g')
-            image.axis.scatter(x2,y2, s = 20, color = 'c')
-            image.axis.scatter(image.x, image.y, color = 'r')
-            image.axis.set_xlim(0,len(image.data_new)) ; image.axis.set_ylim(0,len(image.data_new))
-            image.axis.set_xlabel('x') ; image.axis.set_ylabel('y')
-            image.axis.set_title('Bahtinov Source: %s (%.2f, %.2f)' %(image.name, image.X, image.Y))
-            image.axis.plot(zip(*image.XY)[0], zip(*image.XY)[1], color = 'r')
-            image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
-            image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
-            image.axis.annotate('Focus distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
-            image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
-            plt.close()
-
+                image.star_counter += 1
         #If anything goes wrong with fit skip the star
         except Exception, mes:
             image.star_counter += 1

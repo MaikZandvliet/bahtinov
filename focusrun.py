@@ -29,7 +29,7 @@ print 'UTC:', today_utc_time
 
 
 def FocusRunResults():
-    data = np.loadtxt(directory_prefix +'bahtinov_results/Focusrun/' + today_utc_date + '/Results/temp_12000x10600_890_test/FocusResults.txt')
+    data = np.loadtxt(directory_prefix +'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
     image = data[:,0] ; defocus = data[:,1] ; focus = data[:,2] ; focuserr = data[:,3]
     xp = np.linspace(min(defocus), max(defocus), 100)
     z = np.polyfit(defocus, focus, 1)
@@ -68,11 +68,12 @@ def FocusRunResults():
     axis.grid(True)
     axis.legend(loc=4,fancybox=True, shadow=True, ncol=4, borderpad=1.01)
     fig.tight_layout()
-    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/Focusrun_defocus_results.png')
+    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Focusrun_defocus_results.png')
     #show()
 
-def select_sources(file, threshold = 30, SNR = 160, window_size = 100):
+def select_sources(file, threshold = 30, SNR_limit = 5, window_size = 50):
     objects = []
+    name = file.split('/')[-1].split('.')[0]
     fitsfile = pyfits.open(file, uint=False)
     original = fitsfile[1].data
     original = np.asarray(original, dtype = np.float)
@@ -83,24 +84,26 @@ def select_sources(file, threshold = 30, SNR = 160, window_size = 100):
     #sources = filter(lambda x : image.select_source_in_empty_window(x, data, background, threshold , window_size), sources)
     #sources = map(lambda x : x[1], filter(lambda x : image.select_nonoverlapping_windows(x[1], sources[x[0]+1:], window_size), enumerate(sources[:-1])))
     #sources = np.asarray(sources)
-    objects.append([sources['x'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
-                sources['x2'][np.where(sources['flux'] / ( background.globalback + background.globalrms) > SNR)],
-                sources['y'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
-                sources['y2'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)],
-                sources['flux'][np.where(sources['flux'] / (background.globalback + background.globalrms) > SNR)]])
+    BG = sep.sum_ellipann(data, sources['x'], sources['y'], sources['a'], sources['b'], sources['theta'], sources['b']*1.25, sources['b']*3.5, err = background.globalrms)[0]
+    #print BG
+    SNR = sources['flux'] / BG
+    #SNR = sources['flux'] / (background.globalback + background.globalrms)
+    objects.append([sources['x'][np.where(SNR > SNR_limit)],
+                sources['x2'][np.where(SNR > SNR_limit)],
+                sources['y'][np.where(SNR > SNR_limit)],
+                sources['y2'][np.where(SNR > SNR_limit)],
+                sources['flux'][np.where(SNR > SNR_limit)]])
+    objects = objects[0]
     ratio = data.shape[0] * 1.0 / data.shape[1]
     fig = figure(figsize=(10,ratio *10))
     axis = fig.add_subplot(111)
     axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
-    for i in range(len(sources)):
-        e = Ellipse(xy=(sources['x'][i], sources['y'][i]), width = 50 * sources['a'][i], height = 50 * sources['b'][i], angle = sources['theta'][i] * 180 / np.pi)
-        e.set_facecolor('none')
-        e.set_edgecolor('red')
-        axis.scatter(sources['x'], sources['y'])
-        axis.add_artist(e)
+    axis.scatter(objects[0], objects[2])
+    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + name + '.png')
+
     plt.close()
     #show()
-    return np.asarray(objects)[0]
+    return np.asarray(objects)
 
 # ====================================================================================
 #                                   Start script
@@ -133,6 +136,7 @@ if __name__ == '__main__':
     print '-'*75
 
     if args.path is not None:
+        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
         print 'Current work directory:', workdir
         files = sorted(glob.glob(args.path + '*.fits'))
@@ -147,8 +151,7 @@ if __name__ == '__main__':
         for i in tqdm(xrange(0, len(files))):
             star_counter = 0
             name = files[i].split('/')[-1].split('.')[0]
-            x, x2, y, y2, flux = select_sources(files[i])#np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
-            subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt').format(directory_prefix), shell=True)
+            x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
             subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
             subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
             print 'Number of candidates found:', len(x)
@@ -159,6 +162,7 @@ if __name__ == '__main__':
 
 
     if args.image is not None:
+        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
         file = args.image
         offset = 0
@@ -169,7 +173,6 @@ if __name__ == '__main__':
         name = file.split('/')[-1].split('.')[0]
         window_size = 400
         x, x2, y, y2, flux = select_sources(file)# = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
-        subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
         star_counter = 0
@@ -179,7 +182,7 @@ if __name__ == '__main__':
             star_counter = single_file.main(star_counter)
         print 'Number of sources used:', len(x) - star_counter
 
-    #FocusRunResults()
+    FocusRunResults()
     period = time.time() - start
     print '\nThe computation time was %.3f seconds\n' %(period)
     print '='*25 + ' Focus Run Analysis Ended ' +  '='*25
