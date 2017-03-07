@@ -36,15 +36,15 @@ print '=============== CCD Fit Started ==============='
 print 'UTC:', today_utc_time
 
 class CCDSurface:
-    def __init__(self):
+    def __init__(self, name):
         #print name
         self.pixelsize = 9e-3                                                  # 9 micron per pixel to mm per pixel
         #self.data = np.loadtxt(directory +'Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt')
-        self.data1 = np.loadtxt('/media/data/bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
+        self.data = np.loadtxt('/media/data/bahtinov_results/' + name + '.txt')
         #self.data = np.loadtxt('Focusrun/2016-12-21/Results/FocusResults.txt')
-        self.x = self.data1[:,4]#*self.pixelsize
-        self.y = self.data1[:,5]#*self.pixelsize
-        self.z = self.data1[:,2]
+        self.x = self.data[:,4]#*self.pixelsize
+        self.y = self.data[:,5]#*self.pixelsize
+        self.z = self.data[:,2]
 
     def fitplane(self):
         # best-fit linear plane
@@ -101,7 +101,7 @@ class CCDSurface:
         axis.set_ylabel('y [pixel]')
         cbar = plt.colorbar(CS, shrink = 0.7, label='defocus [micron]')
         fig.tight_layout()
-        fig.savefig('/media/data/bahtinov_results/CCD_surface.png')
+        fig.savefig('/media/data/bahtinov_results/CCD_surface' + str(name) + '.png')
         #show()
 
 # ====================================================================================
@@ -111,24 +111,23 @@ if __name__ == '__main__':
     directory_prefix = '/media/data/'
     directory = directory_prefix + 'bahtinov_results/'                 # Directory containing images
     file = '/media/data/bahtinov_results/' + today_utc_date + '/Results/FocusResults.txt'
-    files = sorted(glob.glob(directory_prefix + 'Bahtinov/'+ '*test.fits'))[4:5]
-    if not os.path.exists(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/'):
-        subprocess.call(('mkdir ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/').format(directory), shell=True)
+    files = sorted(glob.glob(directory + '*.txt'))
+    #if not os.path.exists(directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/'):
+    #    subprocess.call(('mkdir ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/').format(directory), shell=True)
     #subprocess.call(('rm ' + directory + 'Focusrun/' + today_utc_date + '/Results/CCD_surface/' + '/*.png').format(directory_prefix), shell=True)
 
     # ====================================================================================
 
-    Name = file.split('/')[-1].split('.')[0]
+    #Name = file.split('/')[-1].split('.')[0]
     #CCDSurface().fitplane()
-    Surface = CCDSurface()
-    Surface.ccd_sufrace_contour(Name)
-    '''
+    #Surface = CCDSurface()
+    #Surface.ccd_sufrace_contour(Name)
+
     for k in xrange(0,len(files)):
         name = files[k].split('/')[-1].split('.')[0]
         surface = CCDSurface(name)
-        surface.fitplane()
         surface.ccd_sufrace_contour(name)
-    '''
+
 
 
     period = time.time() - start
