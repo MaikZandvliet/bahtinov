@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.ticker import AutoMinorLocator
 from kapteyn import kmpfit
+
 # Set figure parameters and date
 rcParams['figure.figsize'] = 14, 8
 rc('font', size=12)
@@ -36,7 +37,7 @@ def FocusRunResults():
     fitobj = kmpfit.Fitter(residuals=functions.linfitresiduals, data=(defocus, focus, focuserr),
                            xtol=1e-12, gtol=1e-12)
     fitobj.fit(params0=z)
-    print "\n=================== Results linear fit ==================="
+    print "\n=================== Results linear fit best defocus M2 ==================="
     print "Fitted parameters:      ", fitobj.params
     print "Covariance errors:      ", fitobj.xerror
     print "Standard errors:        ", fitobj.stderr
@@ -64,12 +65,10 @@ def FocusRunResults():
     axis.set_title('Focus run M2 vs calculated defocus', fontsize = 14)
     axis.set_xlabel('Offset M2 [$\mu m$]')
     axis.set_ylabel('Calculated defocus [$\mu m$]')
-    #axis.set_xlim(90,210)
     axis.grid(True)
     axis.legend(loc=4,fancybox=True, shadow=True, ncol=4, borderpad=1.01)
     fig.tight_layout()
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Focusrun_defocus_results.png')
-    #show()
 
 def select_sources(file, threshold = 30, SNR_limit = 3, window_size = 50):
     objects = []
@@ -85,9 +84,7 @@ def select_sources(file, threshold = 30, SNR_limit = 3, window_size = 50):
     #sources = map(lambda x : x[1], filter(lambda x : image.select_nonoverlapping_windows(x[1], sources[x[0]+1:], window_size), enumerate(sources[:-1])))
     #sources = np.asarray(sources)
     BG = sep.sum_ellipann(data, sources['x'], sources['y'], sources['a'], sources['b'], sources['theta'], sources['b']*1.25, sources['b']*3.5, err = background.globalrms)[0]
-    #print BG
     SNR = sources['flux'] / BG
-    #SNR = sources['flux'] / (background.globalback + background.globalrms)
     objects.append([sources['x'][np.where(SNR > SNR_limit)],
                 sources['x2'][np.where(SNR > SNR_limit)],
                 sources['y'][np.where(SNR > SNR_limit)],
@@ -100,10 +97,9 @@ def select_sources(file, threshold = 30, SNR_limit = 3, window_size = 50):
     axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
     axis.scatter(sources['x'], sources['y'])
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/' + name + '.png')
-
     plt.close()
-    #show()
     return np.asarray(objects)
+
 
 # ====================================================================================
 #                                   Start script
@@ -138,7 +134,8 @@ if __name__ == '__main__':
     if args.path is not None:
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
-
+        
+        # Creates new directories if non-existing
         if not os.path.exists(workdir + 'Focusrun'):
             subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
@@ -171,6 +168,7 @@ if __name__ == '__main__':
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
 
+        # Creates new directories if non-existing
         if not os.path.exists(workdir + 'Focusrun'):
             subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
