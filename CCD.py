@@ -41,10 +41,10 @@ class CCDSurface:
         self.pixelsize = 9e-3                                                  # 9 micron per pixel to mm per pixel
         #self.data = np.loadtxt(directory +'Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusResults.txt')
         self.data = np.loadtxt('/media/data/bahtinov_results/' + name + '.txt')
-        #self.data = np.loadtxt('Focusrun/2016-12-21/Results/FocusResults.txt')
         self.x = self.data[:,4]#*self.pixelsize
         self.y = self.data[:,5]#*self.pixelsize
         self.z = self.data[:,2]
+        self.zerr = self.data[:,3]#*self.pixelsize
 
     def fitplane(self):
         # best-fit linear plane
@@ -87,16 +87,16 @@ class CCDSurface:
         #axis.scatter(self.x,self.y)
         xi, yi = np.linspace(0, 10560, 100), np.linspace(0, 10600, 100)
         xi, yi = np.meshgrid(xi, yi)
-        rbf = scipy.interpolate.Rbf(self.x, self.y, self.z, function='linear')
+        rbf = scipy.interpolate.Rbf(self.x, self.y, self.z - self.z.min(), function='linear')
         zi = rbf(xi, yi)
         fig = figure()
         axis = fig.add_subplot(111)
         #CS = axis.tricontourf(self.x, self.y, self.z, 100)
         axis.scatter(self.x, self.y)
-        CS = axis.imshow(zi, vmin=self.z.min(), vmax=self.z.max(), origin='lower', extent=[0, 10560, 0, 10600])
+        CS = axis.imshow(zi, vmin=(self.z - self.z.min()).min(), vmax=(self.z - self.z.min()).max(), origin='lower', extent=[0, 10560, 0, 10600])
         axis.set_xlim(0, 10560)
         axis.set_ylim(0, 10600)
-        axis.set_title('Defocus CCD Surface', fontsize = 22)
+        axis.set_title('Defocus CCD Surface %s' %name, fontsize = 22)
         axis.set_xlabel('x [pixel]')
         axis.set_ylabel('y [pixel]')
         cbar = plt.colorbar(CS, shrink = 0.7, label='defocus [micron]')

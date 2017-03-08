@@ -42,7 +42,7 @@ Class Bahtinov
     Some parameters have to be set manually to ensure a fit.
 '''
 class Bahtinov:
-    def __init__(image, image_path, name, X, Xerr, Y, Yerr, offset, k, p, size_i, workdir):
+    def __init__(image, image_path, name, X, Xerr, Y, Yerr, SNR,  offset, k, p, size_i, workdir):
         '''
         __init__ :  Defines an image that is used throughout the class
             image_path ; string
@@ -64,16 +64,13 @@ class Bahtinov:
         image.data = image.image[1].data                                # image data
         image.data = np.asarray(image.data, dtype = np.float)
         image.X = X ; image.Y = Y                                       # x and y coordinates of star
+        image.SNR = SNR
         image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from sep
         image.angle = math.radians(20)                                  # angle of the diagnoal gratings of the Bahtinov mask
         image.p = p ; image.k = k                                       # integers used for saving data
         image.offset = offset                                           # M2 offset
 
         # Creates new directories if non-existing
-        if not os.path.exists(workdir + 'Focusrun'):
-            subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
-        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
-            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date ).format(workdir), shell=True)
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Results/'):
             subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Results').format(workdir), shell=True)
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Plots/'):
@@ -95,10 +92,6 @@ class Bahtinov:
         threshold = background.globalrms * 5
         image.data_new = image.data_new - background
         source = sep.extract(image.data_new, threshold)
-        #print source['flux'][np.where(source['flux'] == np.max(source['flux']))]/background.globalback
-        #plt.imshow(background.back(), interpolation = 'nearest', cmap = 'gray', origin = 'lower')
-        #plt.colorbar()
-        #plt.show()
         image.x, image.y = source['x'][np.where(source['flux'] == np.max(source['flux']))], source['y'][np.where(source['flux'] == np.max(source['flux']))]
 
     def rotate_image(image, data, angle, size):
@@ -107,33 +100,6 @@ class Bahtinov:
         data = Cutout2D(data, (size/2, size/2), (size/2+80, size/2+80)).data
         return data
 
-    def calculate_threshold(image, data):
-        '''
-        Find the thresholds between which the program should calculate the points which are used to fit the straight lines. Threshold is set by
-        setting lower of upper limits on the difference between the max value and mean of a slice in the main image, limits found by trail and error.
-        '''
-        innerthreshold = 0 ; outerthreshold = 0 ; outerthreshold1 = 0 ; innerthreshold1 = 0     # Start with 'no' thresholds for calculations
-        for i in xrange(len(data)):
-            scan = data[:,i]
-            # Determine threshold at left half of image
-            if outerthreshold == 0 :
-                if abs(max(scan) - np.mean(scan)) > 3000:
-                    outerthreshold = i + 10
-            if innerthreshold == 0 :
-                if abs(max(scan) - np.mean(scan)) > 12000:
-                    innerthreshold = i + 10
-            # Determine new threshold at right half of image
-            if i > image.x:
-                if innerthreshold1 == 0 :
-                    if abs(max(scan) - np.mean(scan)) < 12000:
-                        innerthreshold1 = i - 10
-                if outerthreshold1 == 0 :
-                    if abs(max(scan) - np.mean(scan)) < 3000:
-                        outerthreshold1 = i - 10
-        #show()
-        return outerthreshold, innerthreshold, innerthreshold1, outerthreshold1
-
-
     def create_scan(image, data, i):
         scan = data[:,i]                                                    # Create slice of cutout image
         scan[:100] = np.zeros(100)                                          # Section which is not relevant
@@ -141,7 +107,7 @@ class Bahtinov:
         return scan
 
     def determine_peakindices(image, data, i):
-        threshold = (np.max(data) * 0.75 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
+        threshold = (np.max(data) * 0.7 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
         peakindex = peakutils.indexes(np.array(data), thres = threshold, min_dist = 20 )        # find peaks in the slice/scan
         return peakindex
 
@@ -177,68 +143,65 @@ class Bahtinov:
         x = [] ; x1 = [] ; x2 = [] ; y = [] ; y1= [] ; y2 = [] ; yerr = [] ; yerr1 = [] ; yerr2 = []            # Create empty arrays for positions of diffraction spikes
         xdata = np.linspace(0,len(image.data_new),len(image.data_new))
 
-        #outerthreshold, innerthreshold, innerthreshold1, outerthreshold1 = image.calculate_threshold(image.data_new)
-        outerthreshold = 50
-        innerthreshold = 140
-        innerthreshold1 = 150
-        outerthreshold1 = 240
+        outerthreshold = image.x - 90
+        innerthreshold = image.x - 10
+        innerthreshold1 = image.x + 10
+        outerthreshold1 = image.x + 90
 
         '''
         Loop again through all the slices to determine the points to be used for the straight line fit.
         '''
         for i in xrange(len(image.data_new)):
             scan = image.create_scan(image.data_new, i)
-            # Only if all thresholds are non-zero the fit can start
-            if outerthreshold != 0 and innerthreshold != 0 and innerthreshold1 != 0 and outerthreshold1 != 0:
-                # Only slices/scan between the thresholds are relevant
-                if (outerthreshold < i < innerthreshold) or (innerthreshold1 < i < outerthreshold1):
-                    peakindex = image.determine_peakindices(scan, i)
-                    values = [] ; Y = []
-                    if len(peakindex) == 0:
-                        break
-                    for index_ in peakindex:
-                        values.append(scan[index_])
-                        Y.append(xdata[index_])
-                        index = sorted(np.array(values).argsort()[-3:])
-                    # Only if at least three peaks are found continue to fit three lorentzian functions
-                    if len(index) >= 3:
-                        parguess = (values[index[0]], Y[index[0]], 2, values[index[1]], Y[index[1]], 2, values[index[2]], Y[index[2]], 2)
-                        fitobj = kmpfit.Fitter(residuals=functions.lorentzianresiduals, data=(xdata, scan))
-                        # Try to fit using the guesses obtained from peak detection and append relevant values to position arrays
-                        try:
-                            fitobj.fit(params0 = parguess)
+            # Only slices/scan between the thresholds are relevant
+            if (outerthreshold < i < innerthreshold) or (innerthreshold1 < i < outerthreshold1):
+                peakindex = image.determine_peakindices(scan, i)
+                values = [] ; Y = []
+                if len(peakindex) == 0:
+                    break
+                for index_ in peakindex:
+                    values.append(scan[index_])
+                    Y.append(xdata[index_])
+                    index = sorted(np.array(values).argsort()[-3:])
+                # Only if at least three peaks are found continue to fit three lorentzian functions
+                if len(index) >= 3:
+                    parguess = (values[index[0]], Y[index[0]], 2, values[index[1]], Y[index[1]], 2, values[index[2]], Y[index[2]], 2)
+                    fitobj = kmpfit.Fitter(residuals=functions.lorentzianresiduals, data=(xdata, scan))
+                    # Try to fit using the guesses obtained from peak detection and append relevant values to position arrays
+                    try:
+                        fitobj.fit(params0 = parguess)
 
-                            # Distinction between the central and diagonal peaks for left and right half of image
-                            if i <= image.x:                                    # Left half of image
-                                if (image.x - 40 < fitobj.params[1] < image.x - 15) :
-                                    y.append(fitobj.params[1])
-                                    x.append(i)
-                                    yerr.append(fitobj.stderr[1])
-                                if (image.x - 10 < fitobj.params[4] < image.x + 10) :
-                                    y1.append(fitobj.params[4])
-                                    x1.append(i)
-                                    yerr1.append(fitobj.stderr[4])
-                                if (image.x + 10 < fitobj.params[7] < image.x + 40) :
-                                    y2.append(fitobj.params[7])
-                                    x2.append(i)
-                                    yerr2.append(fitobj.stderr[7])
-                            if i > image.x:                                     # Right half of image
-                                if (image.x + 10 < fitobj.params[7] < image.x + 40) :
-                                    y.append(fitobj.params[7])
-                                    x.append(i)
-                                    yerr.append(fitobj.stderr[7])
-                                if (image.x - 10 < fitobj.params[4] < image.x + 10) :
-                                    y1.append(fitobj.params[4])
-                                    x1.append(i)
-                                    yerr1.append(fitobj.stderr[4])
-                                if (image.x - 40 < fitobj.params[1] < image.x - 15) :
-                                    y2.append(fitobj.params[1])
-                                    x2.append(i)
-                                    yerr2.append(fitobj.stderr[1])
+                        # Distinction between the central and diagonal peaks for left and right half of image
+                        if i <= image.x:                                    # Left half of image
+                            if (image.x - 35 < fitobj.params[1] < image.x - 15) :
+                                y.append(fitobj.params[1])
+                                x.append(i)
+                                yerr.append(fitobj.stderr[1])
+                            if (image.x - 10 < fitobj.params[4] < image.x + 10) :
+                                y1.append(fitobj.params[4])
+                                x1.append(i)
+                                yerr1.append(fitobj.stderr[4])
+                            if (image.x + 10 < fitobj.params[7] < image.x + 35) :
+                                y2.append(fitobj.params[7])
+                                x2.append(i)
+                                yerr2.append(fitobj.stderr[7])
+                        if i > image.x:                                     # Right half of image
+                            if (image.x + 10 < fitobj.params[7] < image.x + 35) :
+                                y.append(fitobj.params[7])
+                                x.append(i)
+                                yerr.append(fitobj.stderr[7])
+                            if (image.x - 10 < fitobj.params[4] < image.x + 10) :
+                                y1.append(fitobj.params[4])
+                                x1.append(i)
+                                yerr1.append(fitobj.stderr[4])
+                            if (image.x - 35 < fitobj.params[1] < image.x - 15) :
+                                y2.append(fitobj.params[1])
+                                x2.append(i)
+                                yerr2.append(fitobj.stderr[1])
 
-                        # Skip if something went wrong with fit
-                        except Exception, mes:
-                            pass
+                    # Skip if something went wrong with fit
+                    except Exception, mes:
+                        pass
 
 
 
@@ -283,33 +246,35 @@ class Bahtinov:
             if image.focuserr < 1.0:
                 if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt'):
                     Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
-                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
+                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
                     Results = np.vstack((Results, values))
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
 
                 else:
-                    Results = np.zeros((1,6))
+                    Results = np.zeros((1,7))
                     Results[0,0] = image.number ; Results[0,1] = image.offset
                     Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
                     Results[0,4] = image.X ; Results[0,5] = image.Y
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                    Results[0,6] = image.SNR
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
 
                 if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
                     Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
-                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y]).flatten()
+                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
                     Results = np.vstack((Results, values))
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
 
                 else:
-                    Results = np.zeros((1,6))
+                    Results = np.zeros((1,7))
                     Results[0,0] = image.number ; Results[0,1] = image.offset
                     Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
                     Results[0,4] = image.X ; Results[0,5] = image.Y
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f')
+                    Results[0,6] = image.SNR
+                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
 
                 # Plot star with fitted diffraction spikes
                 image.fig, image.axis = plt.subplots(figsize = (10,10))
-                image.axis.imshow(image.data_new*(10**7), cmap='Greys' , origin='lower')
+                image.axis.imshow(image.data_new*(10**9), cmap='Greys' , origin='lower')
                 image.axis.scatter(x,y, s = 20, color = 'r')
                 image.axis.scatter(x1,y1, s = 20, color = 'g')
                 image.axis.scatter(x2,y2, s = 20, color = 'c')
