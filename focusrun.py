@@ -71,14 +71,14 @@ def FocusRunResults():
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Focusrun_defocus_results.png')
     #show()
 
-def select_sources(file, threshold = 30, SNR_limit = 5, window_size = 50):
+def select_sources(file, threshold = 30, SNR_limit = 3, window_size = 50):
     objects = []
     name = file.split('/')[-1].split('.')[0]
     fitsfile = pyfits.open(file, uint=False)
     original = fitsfile[1].data
     original = np.asarray(original, dtype = np.float)
     data, background =  image.subtract_background(original)
-    sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 50)
+    sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 30)
     sources = np.sort(sources, order = 'flux')
     #sources = filter(lambda x : image.select_source_in_field(x, data.shape[1], data.shape[0], window_size), sources)
     #sources = filter(lambda x : image.select_source_in_empty_window(x, data, background, threshold , window_size), sources)
@@ -92,14 +92,14 @@ def select_sources(file, threshold = 30, SNR_limit = 5, window_size = 50):
                 sources['x2'][np.where(SNR > SNR_limit)],
                 sources['y'][np.where(SNR > SNR_limit)],
                 sources['y2'][np.where(SNR > SNR_limit)],
-                sources['flux'][np.where(SNR > SNR_limit)]])
+                SNR[np.where(SNR > SNR_limit)]])
     objects = objects[0]
     ratio = data.shape[0] * 1.0 / data.shape[1]
     fig = figure(figsize=(10,ratio *10))
     axis = fig.add_subplot(111)
     axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
-    axis.scatter(objects[0], objects[2])
-    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + name + '.png')
+    axis.scatter(sources['x'], sources['y'])
+    fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/' + name + '.png')
 
     plt.close()
     #show()
@@ -120,7 +120,6 @@ if __name__ == '__main__':
     import Bahtinov
 
     start = time.time()
-    #Offset = [100,110,120,130,140,150,160,170,180,190,200,200,190,180,170,160,150,140,130,120,110,100]  # Offsets of M2
     directory_prefix = '/media/data/'
 
     print '-'*75
@@ -135,9 +134,16 @@ if __name__ == '__main__':
     args = params.parse_args()
     print '-'*75
 
+
     if args.path is not None:
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
+
+        if not os.path.exists(workdir + 'Focusrun'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date ).format(workdir), shell=True)
+
         print 'Current work directory:', workdir
         files = sorted(glob.glob(args.path + '*.fits'))
         offset = np.zeros(len(files))
@@ -151,12 +157,12 @@ if __name__ == '__main__':
         for i in tqdm(xrange(0, len(files))):
             star_counter = 0
             name = files[i].split('/')[-1].split('.')[0]
-            x, x2, y, y2 = np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
+            x, x2, y, y2, SNR = select_sources(files[i])#np.loadtxt('SExtractor/' + str(name) + '_reduced.txt', usecols = (0,1,2,3), unpack = True)
             subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
             subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/' + str(name) + '/FocusCCDResults_' + str(name)+ '.txt').format(directory_prefix), shell=True)
             print 'Number of candidates found:', len(x)
             for j in xrange(0,len(x)):
-                Image = Bahtinov.Bahtinov(files[i], name, x[j], x2[j] ,y[j], y2[j], offset[i], i, j, window_size, workdir)
+                Image = Bahtinov.Bahtinov(files[i], name, x[j], x2[j] ,y[j], y2[j], SNR[j], offset[i], i, j, window_size, workdir)
                 star_counter = Image.main(star_counter)
             print 'Number of sources used:', len(x) - star_counter
 
@@ -164,6 +170,12 @@ if __name__ == '__main__':
     if args.image is not None:
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
+
+        if not os.path.exists(workdir + 'Focusrun'):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun').format(workdir), shell=True)
+        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date):
+            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date ).format(workdir), shell=True)
+
         file = args.image
         offset = 0
         if args.offset_image is not None:
@@ -178,7 +190,7 @@ if __name__ == '__main__':
         star_counter = 0
         print 'Number of candidates found:', len(x)
         for p in xrange(0,len(x)):
-            single_file = Bahtinov.Bahtinov(file, name, x[p], x2[p] ,y[p], y2[p], offset, 0, p, window_size, workdir)
+            single_file = Bahtinov.Bahtinov(file, name, x[p], x2[p] ,y[p], y2[p], SNR[p], offset, 0, p, window_size, workdir)
             star_counter = single_file.main(star_counter)
         print 'Number of sources used:', len(x) - star_counter
 
