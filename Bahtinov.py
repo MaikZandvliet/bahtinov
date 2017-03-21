@@ -20,6 +20,7 @@ import time
 import subprocess
 import tiptilt
 from scipy import stats
+from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import sigma_clip
@@ -53,22 +54,24 @@ class Bahtinov:
             k, p ; automatic integers by program
             size_i ; size of the cutout image
         '''
-        bias = fits.open('/media/data/scripts/temp_12000x10600_22_test.fits')
-        bias = bias[1].data
         image.workdir = workdir
+        image.bias = fits.open('/media/data/Bahtinov/2017_03_15/Bias/Masterbias.fits')
+        image.bias = image.bias[0].data
         image.image_path  = image_path                                  # full image path
         image.title = image.image_path.split('/')[-1]                   # name of the image with extension
         image.name = name                                               # name of the image without extension
         image.number = float(image.title.split('_')[-2])                # image number
         image.image = fits.open(image.image_path)                       # opening fits image
         image.data = image.image[1].data                                # image data
-        image.data = np.asarray(image.data, dtype = np.float)
+        image.data = np.asarray(image.data - image.bias, dtype = np.float)
         image.X = X ; image.Y = Y                                       # x and y coordinates of star
         image.SNR = SNR
         image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from sep
         image.angle = math.radians(20)                                  # angle of the diagnoal gratings of the Bahtinov mask
         image.p = p ; image.k = k                                       # integers used for saving data
         image.offset = offset                                           # M2 offset
+        image.correction_factor = 4.73                                  # 1 mm offset in M2 corresponds to 4.73 mm shift at CCD focal plane
+        image.delta = 2590                                              # 'center of gravity' radius of the Bahtinov gratings
 
         # Creates new directories if non-existing
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Results/'):
@@ -77,8 +80,6 @@ class Bahtinov:
             subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Plots').format(workdir), shell=True)
         if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/'):
             subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Plots/' + str(image.name)).format(workdir), shell=True)
-        if not os.path.exists(workdir + 'Focusrun/' + today_utc_date + '/Results/'+ str(image.name) + '/'):
-            subprocess.call(('mkdir ' + workdir + 'Focusrun/' + today_utc_date + '/Results/' + str(image.name)).format(workdir), shell=True)
 
         # Create a cutout image for better data handling and save image with corresponding coordinates from original image
         cutout = Cutout2D(image.data, (X, Y), (size_i, size_i))
@@ -102,22 +103,22 @@ class Bahtinov:
 
     def create_scan(image, data, i):
         scan = data[:,i]                                                    # Create slice of cutout image
-        scan[:100] = np.zeros(100)                                          # Section which is not relevant
-        scan[-100:] = np.zeros(100)                                         # Section which is not relevant
+        scan[:50] = np.zeros(50)                                          # Section which is not relevant
+        scan[-50:] = np.zeros(50)                                         # Section which is not relevant
         return scan
 
     def determine_peakindices(image, data, i):
         threshold = (np.max(data) * 0.7 - np.min(data)) / (np.max(data) - np.min(data))     # sets threshold for peak detection
-        peakindex = peakutils.indexes(np.array(data), thres = threshold, min_dist = 20 )        # find peaks in the slice/scan
+        peakindex = peakutils.indexes(np.array(data), thres = 0.7, min_dist = 20 )        # find peaks in the slice/scan
         return peakindex
 
 
     def calculate_focus_error(image, a, sigma_a, b, sigma_b, c, sigma_c, d, sigma_d):
         sigma_ad = (a*d)**2 * ( (sigma_a/a)**2 + (sigma_d/d)**2 )
         sigma_bc = (b*c)**2 * ( (sigma_b/b)**2 + (sigma_c/c)**2 )
-        sigma2_x = (((d-c) / (a-b))**2 * ( ((sigma_c**2 + sigma_d**2)/(d-c))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2 ))
-        sigma2_y = (((a*d-b*c)/(a-b))**2 * ( (((sigma_ad + sigma_bc) / (a*d - b*c)))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2  ))
-        return (sigma2_y + image.std1**2)**.5
+        sigma2_x = (((d-c) / (a-b))**2 * ( ((sigma_c**2 + sigma_d**2)/(d-c))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2))
+        sigma2_y = (((a*d-b*c)/(a-b))**2 * ( (((sigma_ad + sigma_bc) / (a*d - b*c)))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2))
+        return (sigma2_y + image.std1**2)**.5  / 2 * 9 * (33000 / image.delta)
 
     def calculate_focus(image, outerline0, centralline, outerline1):
         line1 = LineString([(outerline0[0][0], outerline0[0][1]), (outerline0[-1][0], outerline0[-1][1])])
@@ -127,9 +128,9 @@ class Bahtinov:
             a = 1/0
         line_center = LineString([(centralline[0][0], centralline[0][1]), (centralline[-1][0], centralline[-1][1])])
         if np.array(diagonal_line_intersection)[1] > image.intercept1:
-            focus = -diagonal_line_intersection.distance(line_center) * 9
+            focus = - diagonal_line_intersection.distance(line_center) / 2 * 9 * (33000 / image.delta)
         else:
-            focus = diagonal_line_intersection.distance(line_center) * 9
+            focus = diagonal_line_intersection.distance(line_center) / 2 * 9 * (33000 / image.delta)
         return focus
 
     def main(image, star_counter):
@@ -173,28 +174,28 @@ class Bahtinov:
 
                         # Distinction between the central and diagonal peaks for left and right half of image
                         if i <= image.x:                                    # Left half of image
-                            if (image.x - 35 < fitobj.params[1] < image.x - 15) :
+                            if (image.y - 35 < fitobj.params[1] < image.y - 15) :
                                 y.append(fitobj.params[1])
                                 x.append(i)
                                 yerr.append(fitobj.stderr[1])
-                            if (image.x - 10 < fitobj.params[4] < image.x + 10) :
+                            if (image.y - 10 < fitobj.params[4] < image.y + 10) :
                                 y1.append(fitobj.params[4])
                                 x1.append(i)
                                 yerr1.append(fitobj.stderr[4])
-                            if (image.x + 10 < fitobj.params[7] < image.x + 35) :
+                            if (image.y + 10 < fitobj.params[7] < image.y + 35) :
                                 y2.append(fitobj.params[7])
                                 x2.append(i)
                                 yerr2.append(fitobj.stderr[7])
                         if i > image.x:                                     # Right half of image
-                            if (image.x + 10 < fitobj.params[7] < image.x + 35) :
+                            if (image.y + 10 < fitobj.params[7] < image.y + 35) :
                                 y.append(fitobj.params[7])
                                 x.append(i)
                                 yerr.append(fitobj.stderr[7])
-                            if (image.x - 10 < fitobj.params[4] < image.x + 10) :
+                            if (image.y - 10 < fitobj.params[4] < image.y + 10) :
                                 y1.append(fitobj.params[4])
                                 x1.append(i)
                                 yerr1.append(fitobj.stderr[4])
-                            if (image.x - 35 < fitobj.params[1] < image.x - 15) :
+                            if (image.y - 35 < fitobj.params[1] < image.y - 15) :
                                 y2.append(fitobj.params[1])
                                 x2.append(i)
                                 yerr2.append(fitobj.stderr[1])
@@ -211,14 +212,13 @@ class Bahtinov:
         fitobj2 = kmpfit.Fitter(residuals=functions.residuals2, data=(np.array(x2),np.array(y2), np.array(yerr2)))
         try:
             fitobj.fit(params0=[90])
-            image.std = fitobj.stderr
+            image.std = float(fitobj.stderr)
 
             fitobj1.fit(params0=[140])
-            image.std1 = fitobj1.stderr
+            image.std1 = float(fitobj1.stderr)
 
             fitobj2.fit(params0=[190])
-            image.std2 = fitobj2.stderr
-
+            image.std2 = float(fitobj2.stderr)
             # Define stuff
             image.intercept = fitobj.params
             image.intercept1 = fitobj1.params
@@ -231,9 +231,9 @@ class Bahtinov:
             image.XY2 = zip(xdata, image.Y2)
 
             image.Focus = image.calculate_focus(image.XY, image.XY1, image.XY2)
-            image.focuserr = image.calculate_focus_error(image.angle, 0, -image.angle, 0, image.intercept[0], image.std[0], image.intercept2[0], image.std2[0])#(sigma2_y + image.std1**2)**.5
+            image.focuserr = image.calculate_focus_error(image.angle, 0, -image.angle, 0, image.intercept[0], image.std, image.intercept2[0], image.std2)#(sigma2_y + image.std1**2)**.5
 
-            #while False:
+
             if len(x) > 1 and len(x1) > 1 and len(x2) > 1:
                 if np.min(x) > image.x or np.min(x1) > image.x or np.min(x2) > image.x:
                     print 1/0
@@ -243,7 +243,7 @@ class Bahtinov:
             '''
             Saving stuff
             '''
-            if image.focuserr < 1.0:
+            if image.focuserr < 82.5 and image.focuserr < abs(image.Focus):
                 if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt'):
                     Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
                     values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
@@ -258,23 +258,9 @@ class Bahtinov:
                     Results[0,6] = image.SNR
                     np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
 
-                if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt'):
-                    Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt')
-                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
-                    Results = np.vstack((Results, values))
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
-
-                else:
-                    Results = np.zeros((1,7))
-                    Results[0,0] = image.number ; Results[0,1] = image.offset
-                    Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
-                    Results[0,4] = image.X ; Results[0,5] = image.Y
-                    Results[0,6] = image.SNR
-                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/' + str(image.name) + '/FocusCCDResults_' + str(image.name)+ '.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
-
                 # Plot star with fitted diffraction spikes
                 image.fig, image.axis = plt.subplots(figsize = (10,10))
-                image.axis.imshow(image.data_new*(10**9), cmap='Greys' , origin='lower')
+                image.axis.imshow(image.data_new, cmap='Greys' , origin='lower', norm = LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
                 image.axis.scatter(x,y, s = 20, color = 'r')
                 image.axis.scatter(x1,y1, s = 20, color = 'g')
                 image.axis.scatter(x2,y2, s = 20, color = 'c')
@@ -285,7 +271,7 @@ class Bahtinov:
                 image.axis.plot(zip(*image.XY)[0], zip(*image.XY)[1], color = 'r')
                 image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
                 image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
-                image.axis.annotate('Focus distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
+                image.axis.annotate('Axial distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
                 image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
                 plt.close()
             else:

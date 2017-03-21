@@ -131,7 +131,7 @@ def linfit(p, x):
 
 def linfitresiduals(p, data):
     a, b = p
-    x, y, yerr = data
-    w = yerr**2
-    wi = np.sqrt(np.where(w==0.0, 0.0, 1.0/(w)))
+    x, y = data
+    #w = yerr**2
+    #wi = np.sqrt(np.where(w==0.0, 0.0, 1.0/(w)))
     return (y - linfit(p,x))

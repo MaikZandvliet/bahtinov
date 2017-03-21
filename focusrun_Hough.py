@@ -13,7 +13,7 @@ import sewpy
 from tiptilt import image
 from pylab import rcParams
 import pyfits
-from matplotlib.pyplot import figure, show, rc
+from matplotlib.pyplot import figure, show, rc, cm
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.ticker import AutoMinorLocator
@@ -32,10 +32,10 @@ print 'UTC:', today_utc_time
 
 def FocusRunResults():
     data = np.loadtxt(directory_prefix +'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
-    image = data[:,0] ; defocus = data[:,1] ; focus = data[:,2] ; focuserr = data[:,3]
+    image = data[:,0] ; defocus = data[:,1] ; focus = data[:,2]
     xp = np.linspace(min(defocus), max(defocus), 100)
     z = np.polyfit(defocus, focus, 1)
-    fitobj = kmpfit.Fitter(residuals=functions.linfitresiduals, data=(defocus, focus, focuserr), xtol=1e-12, gtol=1e-12)
+    fitobj = kmpfit.Fitter(residuals=functions.linfitresiduals, data=(defocus, focus), xtol=1e-12, gtol=1e-12)
     fitobj.fit(params0=z)
     print "\n=================== Results linear fit best defocus M2 ==================="
     print "Fitted parameters:      ", fitobj.params
@@ -57,7 +57,7 @@ def FocusRunResults():
     fig, axis = plt.subplots()
     axis.xaxis.set_minor_locator(AutoMinorLocator())
     axis.yaxis.set_minor_locator(AutoMinorLocator())
-    axis.errorbar(defocus,focus, yerr = focuserr, fmt = 'ko')
+    axis.scatter(defocus,focus, color = 'k', marker = 'o')
     axis.annotate('Best offset M2 = %.2f $\pm$ %.3f $\\mu m$' %(bestfocus, bestfocusvar**.5),
         xy=(0, 1), xycoords='axes fraction', fontsize=12, horizontalalignment='left', verticalalignment='top')
     axis.plot(xp, functions.linfit(fitobj.params,xp), color = 'r', ls='--', lw=2)
@@ -70,7 +70,7 @@ def FocusRunResults():
     fig.tight_layout()
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/Focusrun_defocus.png')
 
-def select_sources(file, threshold = 30, SNR_limit = 5):
+def select_sources(file, threshold = 30, SNR_limit = 10):
     objects = []
     name = file.split('/')[-1].split('.')[0]
     fitsfile = pyfits.open(file, uint=False)
@@ -78,7 +78,7 @@ def select_sources(file, threshold = 30, SNR_limit = 5):
     original = np.asarray(original, dtype = np.float)
     bias = fits.open('/media/data/Bahtinov/2017_03_15/Bias/Masterbias.fits')
     bias = bias[0].data
-    original = original - bias
+    original = original
     data, background =  image.subtract_background(original)
     sources = sep.extract(data, threshold, err = background.globalrms, gain = 1.0, minarea = 100)
     sources = np.sort(sources, order = 'flux')
@@ -93,7 +93,7 @@ def select_sources(file, threshold = 30, SNR_limit = 5):
     ratio = data.shape[0] * 1.0 / data.shape[1]
     fig = figure(figsize=(10,ratio *10))
     axis = fig.add_subplot(111)
-    axis.imshow(data, cmap = 'gray', interpolation = 'nearest', origin = 'lower')
+    axis.imshow(data, cmap=cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(data)), origin = 'lower')
     axis.scatter(sources['x'], sources['y'], color = 'b', s = 1.5)
     axis.scatter(objects[0], objects[2], color = 'r', s = 1.5)
     fig.savefig(directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/' + name + '.png')
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     from tqdm import *
     import matplotlib
     import functions
-    import Bahtinov
+    import Bahtinov_Hough
 
     start = time.time()
     directory_prefix = '/media/data/'
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     args = params.parse_args()
     print '-'*75
 
-    '''
+
     if args.path is not None:
         subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Results/FocusResults.txt').format(directory_prefix), shell=True)
         workdir = args.workdir
@@ -158,8 +158,9 @@ if __name__ == '__main__':
             subprocess.call(('rm ' + directory_prefix + 'bahtinov_results/Focusrun/' + today_utc_date + '/Plots/' + str(name) + '/*').format(directory_prefix), shell=True)
             print 'Number of candidates found:', len(x)
             for j in xrange(0,len(x)):
-                Image = Bahtinov.Bahtinov(files[i], name, x[j], x2[j] ,y[j], y2[j], SNR[j], offset[i], i, j, window_size, workdir)
-                star_counter = Image.main(star_counter)
+                Image = Bahtinov_Hough.Bahtinov(files[i], name, x[j], x2[j] ,y[j], y2[j], SNR[j], offset[i], i, j, window_size, workdir)
+                star_counter = Image.houghtransform(star_counter)
+                #star_counter = Image.main(star_counter)
             print 'Number of sources used:', len(x) - star_counter
 
 
@@ -186,10 +187,11 @@ if __name__ == '__main__':
         star_counter = 0
         print 'Number of candidates found:', len(x)
         for p in xrange(0,len(x)):
-            single_file = Bahtinov.Bahtinov(file, name, x[p], x2[p] ,y[p], y2[p], SNR[p], offset, 0, p, window_size, workdir)
-            star_counter = single_file.main(star_counter)
+            single_file = Bahtinov_Hough.Bahtinov(file, name, x[p], x2[p] ,y[p], y2[p], SNR[p], offset, 0, p, window_size, workdir)
+            #star_counter = single_file.main(star_counter)
+            star_counter = single_file.houghtransform(star_counter)
         print 'Number of sources used:', len(x) - star_counter
-    '''
+
     FocusRunResults()
     period = time.time() - start
     print '\nThe computation time was %.3f seconds\n' %(period)
