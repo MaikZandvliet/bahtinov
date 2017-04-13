@@ -9,6 +9,7 @@ from __future__ import division
 from tiptilt import image
 import time
 import datetime
+from kapteyn import kmpfit
 import os
 import subprocess
 import glob
@@ -47,6 +48,7 @@ class CCDSurface:
         self.z = self.data[:,2]
         self.zerr = self.data[:,3]
         self.snr = self.data[:,6]
+
 
     def fitplane(self):
         # best-fit linear plane
@@ -98,7 +100,7 @@ class CCDSurface:
         #plt.close()
         show()
 
-    def polyfit2d(self, x, y, z, order=1):
+    def polyfit2d(self, x, y, z, order=3):
         ncols = (order + 1)**2
         G = np.zeros((x.size, ncols))
         ij = itertools.product(range(order+1), range(order+1))
@@ -115,25 +117,38 @@ class CCDSurface:
             z += a * x**i * y**j
         return z
 
+    def poly2d(self, (x, y), a, b, c, d, e, f, g, h, i):
+        z = a + b*x + c*y + d*x**2 + e*x*y + f*y**2 + g*x**2*y+ h*y**2*x + i* y**3
+        #z = a + b*x + c*y + d*x**2 + e * y**2
+        return z
+
+    def residualspoly(self, p, data):
+        x, y, err = data
+        a, b, c, d, e, f, g, h, i = p
+        w = err**2
+        wi = np.sqrt(np.where(w==0.0, 0.0, 1.0/(w)))
+        return wi*(y - poly2d(x,y,*p))
+
+
 
     def ccd_sufrace_contour(self, name):
         xi, yi = np.linspace(0, 10560, len(self.x)), np.linspace(0, 10600, len(self.y))
         xi, yi = np.meshgrid(xi, yi)
         x_ , y_ = np.meshgrid(self.x, self.y)
-
         #self.polynom(self.x,self.y,self.z)
         G, m, res, rank, s = self.polyfit2d(self.x,self.y,self.z)
         zz  = self.polyval2d(xi, yi, m)
         z_ = self.polyval2d(x_, y_, m)
-        #for i in xrange(0,len(zz)):
+        guess = (1,1,1,1,1,1,1,1,1)
+        popt, pcov = scipy.optimize.curve_fit(self.poly2d, (self.x, self.y), self.z, p0 = guess, sigma = self.zerr)
+        zz = self.poly2d((xi, yi), *popt)
+        z_ = self.poly2d((self.x, self.y), *popt)
 
-
-
-        #rbf = scipy.interpolate.Rbf(self.x, self.y, self.z, function='linear')
-        #zz = rbf(xi, yi)
-        #z_ = rbf(x_, y_)
-        chi_red = 1/(len(self.x)-(int(np.sqrt(len(m))) - 1)) * np.sum((zz-z_)**2 / self.zerr**2)
-
+        rbf = scipy.interpolate.Rbf(self.x, self.y, self.z, function = 'linear')
+        zz = rbf(xi, yi)
+        z_ = rbf(x_, y_)
+        chi_red = 1/(len(self.x)-(int(np.sqrt(len(guess))) - 1)) * np.sum((zz-z_)**2 / self.zerr**2)
+        print name
         print chi_red
         #s = self.snr/10
         #mlab.figure(size = (1920/2,1080/2))
@@ -161,7 +176,8 @@ class CCDSurface:
         '''
         fig = figure()
         axis = fig.add_subplot(111, projection='3d')
-        axis.plot_surface(xi, yi, zz, alpha=0.05, color='r', label = 'Horizontal')
+        axis.plot_surface(xi, yi, zz, alpha=0.05, color='g', label = 'Horizontal')
+        #axis.plot_surface(xi, yi, z, alpha=0.05, color='r', label = 'Horizontal')
         axis.scatter(self.x, self.y, self.z)
         for i in np.arange(0, len(self.x)):
             axis.plot([self.x[i], self.x[i]], [self.y[i], self.y[i]], [self.z[i], self.z[i]], marker="_")

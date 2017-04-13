@@ -69,9 +69,9 @@ class Bahtinov:
         image.number = float(image.title.split('_')[-2])                # image number
         image.image = fits.open(image.image_path)                       # opening fits image
         image.data = image.image[1].data                                # image data
-        image.data = np.asarray(image.data - image.bias, dtype = np.float)
+        image.data = np.asarray(image.data - image.bias , dtype = np.float)
         image.X = X ; image.Y = Y                                       # x and y coordinates of star
-        image.SNR = SNR
+        image.SNR = SNR                                                 # Calcalated SNR
         image.Xerr = Xerr ; image.Yerr = Yerr                           # xerr and yerr of star obtained from sep
         image.angle = math.radians(21)                                  # angle of the diagnoal gratings of the Bahtinov mask
         image.p = p ; image.k = k                                       # integers used for saving data
@@ -110,12 +110,21 @@ class Bahtinov:
         return data
 
     def calculate_focus_error(image, a, sigma_a, b, sigma_b, c, sigma_c, d, sigma_d, sigma_center):
-        sigma2_ad = ((a*d)**2 * ( (sigma_a/a)**2 + (sigma_d/d)**2 ))
-        sigma2_bc = ((b*c)**2 * ( (sigma_b/b)**2 + (sigma_c/c)**2 ))
-        sigma2_x = (((d-c) / (a-b))**2 * ( ((sigma_c**2 + sigma_d**2)/(d-c))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2))
-        sigma2_y = (((a*d-b*c)/(a-b))**2 * ( (((sigma2_ad + sigma2_bc) / (a*d - b*c)))**2 + ((sigma_a**2 + sigma_b**2)/(a-b))**2))
-        focuserr = (sigma2_y + sigma_center**2) * ( 1/2 * 9 * (33000 / image.delta))**2
-        return sigma2_x, sigma2_y, focuserr**.5
+        A_y = ( (b*(c-d)) / (a-b)**2 )**2 * sigma_a**2
+        B_y = ( (a*(d-c)) / (a-b)**2 )**2 * sigma_b**2
+        C_y = (- b / (a-b))**2 * sigma_c**2
+        D_y = ( a / (a-b))**2 * sigma_d**2
+        sigma2_y = A_y + B_y + C_y + D_y
+
+        A_x = ( (c-d)/(a-b)**2 )**2 * sigma_a**2
+        B_x = ( (d-c)/(a-b)**2 )**2 * sigma_b**2
+        C_x = ( 1 / (b-a))**2 * sigma_c**2
+        D_x = ( 1 / (a-b))**2 * sigma_d**2
+        sigma2_x = A_x + B_x + C_x + D_x
+
+        sigma2_focus = (sigma2_y + sigma_center**2)
+        sigma2_focus = ((9/2) * (33000/2590))**2 * sigma2_focus
+        return sigma2_x, sigma2_y, sigma2_focus**.5
 
     def calculate_focus(image, outerline0, centralline, outerline1):
         line1 = LineString([(outerline0[0][0], outerline0[0][1]), (outerline0[-1][0], outerline0[-1][1])])
@@ -138,7 +147,9 @@ class Bahtinov:
         xdata = np.linspace(0,len(image.data_new),len(image.data_new))
         #for i in xrange(len(image.data_new)):
         edges = canny(image.data_new, 2.5, 1.75, 20)
-        lines = probabilistic_hough_line(edges, theta = np.array([-image.angle + np.pi/2, np.pi/2, image.angle + np.pi/2]), threshold = 20, line_length = 40, line_gap = 50)
+        allowed_angles = np.linspace(image.angle-math.radians(1), image.angle+math.radians(1), 100)
+        angles = np.concatenate((-allowed_angles + np.pi/2, allowed_angles + np.pi/2))
+        lines = probabilistic_hough_line(edges, theta = np.append([np.pi/2], angles), threshold = 20, line_length = 60, line_gap = 70)
 
         line0_intercept = [] ; line1_intercept = [] ; line2_intercept = []
         for line in lines:
@@ -158,128 +169,146 @@ class Bahtinov:
             if abs(np.max(line1_intercept) - np.min(line1_intercept)) > 7.5:
                 if abs(np.max(line0_intercept) - np.min(line0_intercept)) > 7.5:
                     if abs(np.max(line2_intercept) - np.min(line2_intercept)) > 7.5:
-                        center_line_intercept = (np.max(line0_intercept)+np.min(line0_intercept)) / 2
-                        upper_line_intercept = (np.max(line2_intercept)+np.min(line2_intercept)) / 2
-                        lower_line_intercept = (np.max(line1_intercept)+np.min(line1_intercept)) / 2
-                        for i in xrange(len(image.data_new)):
-                            Y_center = 0 * i + center_line_intercept
-                            Y_upper = image.angle*i + upper_line_intercept
-                            Y_lower = -image.angle*i + lower_line_intercept
-                            line0_intercept = [] ; line1_intercept = [] ; line2_intercept = []
-                            for line in lines:
-                                p0, p1 = line
-                                x = p0[0] ; x1 = p1[0]
-                                y = p0[1] ; y1 = p1[1]
-                                a = (y1 - y) / (x1 - x)
-                                b = y - a * x
-                                Y = a*i + b
-                                if (135 < Y < 155) and a == 0:
-                                    line0_intercept.append(Y)
-                                if (Y_lower-20 < Y < Y_lower+20):
-                                    line1_intercept.append(Y)
-                                if (Y_upper-20 < Y < Y_upper+20):
-                                    line2_intercept.append(Y)
-                            scan = image.data_new[:,i]
+                        center_line_intercept = (np.max(line0_intercept) + np.min(line0_intercept)) / 2
+                        upper_line_intercept = (np.max(line2_intercept) + np.min(line2_intercept)) / 2
+                        lower_line_intercept = (np.max(line1_intercept) + np.min(line1_intercept)) / 2
+                        line0_intercept_left = np.array(line0_intercept)[np.where(line0_intercept < center_line_intercept)]
+                        line0_intercept_right = np.array(line0_intercept)[np.where(line0_intercept > center_line_intercept)]
+                        line1_intercept_left = np.array(line1_intercept)[np.where(line1_intercept < lower_line_intercept)]
+                        line1_intercept_right = np.array(line1_intercept)[np.where(line1_intercept > lower_line_intercept)]
+                        line2_intercept_left = np.array(line2_intercept)[np.where(line2_intercept < upper_line_intercept)]
+                        line2_intercept_right = np.array(line2_intercept)[np.where(line2_intercept > upper_line_intercept)]
+                        if (len(line0_intercept_left) >= 2 and len(line0_intercept_right) >= 2 and len(line1_intercept_left) >= 2 and len(line1_intercept_right) >= 2
+                        and len(line2_intercept_left) >= 2 and len(line2_intercept_right) >= 2):
+                            center_line_intercept = (np.mean(line0_intercept_left) + np.mean(line0_intercept_right)) / 2
+                            lower_line_intercept = (np.mean(line1_intercept_left) + np.mean(line1_intercept_right)) / 2
+                            upper_line_intercept = (np.mean(line2_intercept_left) + np.mean(line2_intercept_right)) / 2
+                            for i in xrange(len(image.data_new)):
+                                Y_center = 0 * i + center_line_intercept
+                                Y_upper = image.angle*i + upper_line_intercept
+                                Y_lower = -image.angle*i + lower_line_intercept
+                                Y_center_left = 0 * i + np.mean(line0_intercept_left)
+                                Y_upper_left = image.angle*i + np.mean(line2_intercept_left)
+                                Y_lower_left = -image.angle*i + np.mean(line1_intercept_left)
+                                Y_center_right = 0 * i + np.mean(line0_intercept_right)
+                                Y_upper_right = image.angle*i + np.mean(line2_intercept_right)
+                                Y_lower_right = -image.angle*i + np.mean(line1_intercept_right)
+                                line0_intercept = [] ; line1_intercept = [] ; line2_intercept = []
+                                for line in lines:
+                                    p0, p1 = line
+                                    x = p0[0] ; x1 = p1[0]
+                                    y = p0[1] ; y1 = p1[1]
+                                    a = (y1 - y) / (x1 - x)
+                                    b = y - a * x
+                                    Y = a*i + b
+                                    if (135 < Y < 155) and a == 0:
+                                        line0_intercept.append(Y)
+                                    if (Y_lower-20 < Y < Y_lower+20):
+                                        line1_intercept.append(Y)
+                                    if (Y_upper-20 < Y < Y_upper+20):
+                                        line2_intercept.append(Y)
+                                scan = image.data_new[:,i]
 
-                            fig, axes = plt.subplots(2,3)#, sharex=True, sharey=True)
-                            axis = axes.ravel()
-                            axis[0].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
-                            axis[0].axvline(i, color = 'k')
-                            axis[0].set_xlabel('x')
-                            axis[0].set_ylabel('y')
-                            axis[1].plot(xdata, scan, lw = .5)
-                            axis[1].axvline(Y_upper, color = 'c', lw = .5)
-                            axis[1].axvline(Y_center, color = 'y', lw = .5)
-                            axis[1].axvline(Y_lower, color = 'c', lw = .5)
-                            axis[1].set_xlabel('y')
-                            axis[1].set_ylabel('flux [counts]')
-                            for b in line0_intercept:
-                                axis[1].axvline(b, color = 'g', lw = .25)
-                            for b in line1_intercept:
-                                axis[1].axvline(b, color = 'g', lw = .25)
-                            for b in line2_intercept:
-                                axis[1].axvline(b, color = 'g', lw = .25)
-                            axis[1].set_xlim(Y_upper-20,Y_lower+20)
-                            if i > image.x:
-                                axis[1].set_xlim(Y_lower-20,Y_upper+20)
-                            axis[3].plot(xdata, scan, lw = .25)
-                            axis[3].axvline(Y_upper, color = 'c', lw = .5)
-                            axis[3].axvline(Y_center, color = 'y', lw = .5)
-                            axis[3].axvline(Y_lower, color = 'c', lw = .5)
-                            for b in line0_intercept:
-                                axis[3].axvline(b, color = 'g', lw = .25)
-                            axis[3].set_xlim(130,160)
-                            axis[3].set_xlabel('y')
-                            axis[3].set_ylabel('flux [counts]')
-                            axis[4].plot(xdata, scan, lw = .25)
-                            axis[4].axvline(Y_upper, color = 'c', lw = .5)
-                            axis[4].axvline(Y_center, color = 'y', lw = .5)
-                            axis[4].axvline(Y_lower, color = 'c', lw = .5)
-                            for b in line2_intercept:
-                                axis[4].axvline(b, color = 'g', lw = .25)
-                            axis[4].set_xlim(Y_upper-20,Y_upper+20)
-                            axis[4].set_xlabel('y')
-                            axis[4].set_ylabel('flux [counts]')
-                            axis[5].plot(xdata, scan, lw = .25)
-                            axis[5].axvline(Y_upper, color = 'c', lw = .5)
-                            axis[5].axvline(Y_center, color = 'y', lw = .5)
-                            axis[5].axvline(Y_lower, color = 'c', lw = .5)
-                            for b in line1_intercept:
-                                axis[5].axvline(b, color = 'g', lw = .25)
-                            axis[5].set_xlim(Y_lower-20,Y_lower+20)
-                            axis[5].set_xlabel('y')
-                            axis[5].set_ylabel('flux [counts]')
-                            try:
-                                peakindex = peakutils.indexes(np.array(scan), thres = 0.7, min_dist = 20)        # find peaks in the slice/scan
-                                values = [] ; Y = []
-                                for index_ in peakindex:
-                                    values.append(scan[index_])
-                                    Y.append(xdata[index_])
-                                    index = sorted(np.array(values).argsort()[-3:])
-                                if len(index) >= 3:
-                                    parguess = (values[index[0]], Y_upper, 2, values[index[1]], Y_center, 2, values[index[2]], Y_lower, 2)
-                                    fitobjl = kmpfit.Fitter(residuals=functions.lorentzianresiduals, data=(xdata, scan))
-                                    fitobjl.fit(params0 = parguess)
-                                    fitobjg = kmpfit.Fitter(residuals=functions.guassianresiduals, data=(xdata, scan))
-                                    fitobjg.fit(params0 = parguess)
-                                axis[2].plot(xdata, scan, lw = .25, color = 'b')
-                                axis[2].plot(xdata, functions.ThreeLorentzian(xdata, *fitobjl.params), color = 'k')
-                                axis[2].plot(xdata, functions.three_gaussians(xdata, *fitobjg.params), color = 'r')
-                                axis[2].set_xlabel('y')
-                                axis[2].set_ylabel('flux [counts]')
-                                for index_ in peakindex:
-                                    values.append(scan[index_])
-                                    Y.append(xdata[index_])
-                                    index = sorted(np.array(values).argsort()[-3:])
-                                if len(index) >= 3:
-                                    parguess = (np.max(values), Y_upper, 2, np.max(values), Y_center, 2, np.max(values), Y_lower, 2)
-                                    fitobjl = kmpfit.Fitter(residuals=functions.lorentzianresiduals, data=(xdata, scan))
-                                    fitobjl.fit(params0 = parguess)
-                                    fitobjg = kmpfit.Fitter(residuals=functions.guassianresiduals, data=(xdata, scan))
-                                    fitobjg.fit(params0 = parguess)
-                                axis[2].plot(xdata, scan, lw = .25, color = 'b')
-                                axis[2].plot(xdata, functions.ThreeLorentzian(xdata, *fitobjl.params), color = 'c')
-                                axis[2].plot(xdata, functions.three_gaussians(xdata, *fitobjg.params), color = 'g')
-                                axis[2].set_xlabel('y')
-                                axis[2].set_ylabel('flux [counts]')
-                            except:
-                                axis[2].axis('off')
-                            fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '_' + str(i) + '_Scan.png')
-                            plt.close()
+                                fig, axes = plt.subplots(2,3)#, sharex=True, sharey=True)
+                                axis = axes.ravel()
+                                fig.suptitle('Bahtinov Source: %s (%.2f, %.2f)' %(image.name, image.X, image.Y))
+                                axis[0].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
+                                axis[0].axvline(i, color = 'k')
+                                axis[0].set_xlabel('x')
+                                axis[0].set_ylabel('y')
+                                axis[1].plot(xdata, scan, lw = .5)
+                                axis[1].axvline(Y_upper, color = 'c', lw = .5)
+                                axis[1].axvline(Y_center, color = 'y', lw = .5)
+                                axis[1].axvline(Y_lower, color = 'c', lw = .5)
+                                axis[1].set_xlabel('y')
+                                axis[1].set_ylabel('flux [counts]')
+                                for b in line0_intercept:
+                                    axis[1].axvline(b, color = 'g', lw = .25)
+                                for b in line1_intercept:
+                                    axis[1].axvline(b, color = 'g', lw = .25)
+                                for b in line2_intercept:
+                                    axis[1].axvline(b, color = 'g', lw = .25)
+                                axis[1].set_xlim(Y_upper-20,Y_lower+20)
+                                if i > image.x:
+                                    axis[1].set_xlim(Y_lower-20,Y_upper+20)
+                                axis[3].plot(xdata, scan, lw = .25)
+                                axis[3].axvline(Y_upper, color = 'c', lw = .5)
+                                axis[3].axvline(Y_center, color = 'y', lw = .5)
+                                axis[3].axvline(Y_lower, color = 'c', lw = .5)
+                                for b in line0_intercept:
+                                    axis[3].axvline(b, color = 'g', lw = .25)
+                                axis[3].set_xlim(130,160)
+                                axis[3].set_xlabel('y')
+                                axis[3].set_ylabel('flux [counts]')
+                                axis[4].plot(xdata, scan, lw = .25)
+                                axis[4].axvline(Y_upper, color = 'c', lw = .5)
+                                axis[4].axvline(Y_center, color = 'y', lw = .5)
+                                axis[4].axvline(Y_lower, color = 'c', lw = .5)
+                                for b in line2_intercept:
+                                    axis[4].axvline(b, color = 'g', lw = .25)
+                                axis[4].set_xlim(Y_upper-20,Y_upper+20)
+                                axis[4].set_xlabel('y')
+                                axis[4].set_ylabel('flux [counts]')
+                                axis[5].plot(xdata, scan, lw = .25)
+                                axis[5].axvline(Y_upper, color = 'c', lw = .5)
+                                axis[5].axvline(Y_center, color = 'y', lw = .5)
+                                axis[5].axvline(Y_lower, color = 'c', lw = .5)
+                                for b in line1_intercept:
+                                    axis[5].axvline(b, color = 'g', lw = .25)
+                                axis[5].set_xlim(Y_lower-20,Y_lower+20)
+                                axis[5].set_xlabel('y')
+                                axis[5].set_ylabel('flux [counts]')
+                                try:
+                                    peakindex = peakutils.indexes(np.array(scan), thres = 0.7, min_dist = 20)        # find peaks in the slice/scan
+                                    values = [] ; Y = []
+                                    for index_ in peakindex:
+                                        values.append(scan[index_])
+                                        Y.append(xdata[index_])
+                                        index = sorted(np.array(values).argsort()[-3:])
+                                    if len(index) >= 3:
+                                        parguess = (values[index[0]], Y_upper, 2, values[index[1]], Y_center, 2, values[index[2]], Y_lower, 2)
+                                        fitobjg = kmpfit.Fitter(residuals=functions.guassianresiduals, data=(xdata, scan))
+                                        fitobjg.fit(params0 = parguess)
+                                    axis[2].plot(xdata, scan, lw = .25, color = 'b')
+                                    axis[2].plot(xdata, functions.three_gaussians(xdata, *fitobjg.params), color = 'r')
+                                    axis[2].set_xlabel('y')
+                                    axis[2].set_ylabel('flux [counts]')
+                                    axis[2].axvline(Y_upper_left, color = 'k', lw = .5)
+                                    axis[2].axvline(Y_center_left, color = 'k', lw = .5)
+                                    axis[2].axvline(Y_lower_left, color = 'k', lw = .5)
+                                    axis[2].axvline(Y_upper_right, color = 'k', lw = .5)
+                                    axis[2].axvline(Y_center_right, color = 'k', lw = .5)
+                                    axis[2].axvline(Y_lower_right, color = 'k', lw = .5)
+                                    for index_ in peakindex:
+                                        values.append(scan[index_])
+                                        Y.append(xdata[index_])
+                                        index = sorted(np.array(values).argsort()[-3:])
+                                    if len(index) >= 3:
+                                        parguess = (np.max(values), Y_upper, 2, np.max(values), Y_center, 2, np.max(values), Y_lower, 2)
+                                        fitobjg = kmpfit.Fitter(residuals=functions.guassianresiduals, data=(xdata, scan))
+                                        fitobjg.fit(params0 = parguess)
+                                    axis[2].plot(xdata, scan, lw = .25, color = 'b')
+                                    axis[2].plot(xdata, functions.three_gaussians(xdata, *fitobjg.params), color = 'c')
+                                    axis[2].set_xlabel('y')
+                                    axis[2].set_ylabel('flux [counts]')
+                                except:
+                                    axis[2].axis('off')
+                                fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '_' + str(i) + '_Scan.png')
+                                plt.close()
 
 
     def houghtransform(image, star_counter):
         image.star_counter = star_counter
         if (image.x != 0) and (image.y != 0):
             edges = canny(image.data_new, 2.5, 1.75, 20)
-            lines = probabilistic_hough_line(edges, theta = np.array([-image.angle + np.pi/2, np.pi/2, image.angle + np.pi/2]), threshold = 20, line_length = 60, line_gap = 70)
+            allowed_angles = np.linspace(image.angle-math.radians(1), image.angle+math.radians(1), 100)
+            angles = np.concatenate((-allowed_angles + np.pi/2, allowed_angles + np.pi/2))
+            lines = probabilistic_hough_line(edges, theta = np.append([np.pi/2], angles), threshold = 20, line_length = 60, line_gap = 70)
             xdata = np.linspace(0,len(image.data_new),len(image.data_new))
-
 
             line0_intercept = [] ; line1_intercept = [] ; line2_intercept = []
             for line in lines:
                 p0, p1 = line
-
                 x = p0[0] ; x1 = p1[0]
                 y = p0[1] ; y1 = p1[1]
                 a = (y1 - y) / (x1 - x)
@@ -291,80 +320,95 @@ class Bahtinov:
                     line1_intercept.append(b)
                 if (70 < b < 95):
                     line2_intercept.append(b)
-
             if len(line0_intercept) >= 2 and len(line1_intercept) >= 2 and len(line2_intercept) >= 2:
                 if abs(np.max(line1_intercept) - np.min(line1_intercept)) > 7.5:
                     if abs(np.max(line0_intercept) - np.min(line0_intercept)) > 7.5:
                         if abs(np.max(line2_intercept) - np.min(line2_intercept)) > 7.5:
+
                             center_line_intercept = (np.max(line0_intercept) + np.min(line0_intercept)) / 2
                             upper_line_intercept = (np.max(line2_intercept) + np.min(line2_intercept)) / 2
                             lower_line_intercept = (np.max(line1_intercept) + np.min(line1_intercept)) / 2
-                            sigma_center = (np.max(line0_intercept) - np.min(line0_intercept)) / (3*2*(2*np.log(2))**.5)
-                            sigma_upper = (np.max(line2_intercept) - np.min(line2_intercept)) / (3*2*(2*np.log(2))**.5)
-                            sigma_lower = (np.max(line1_intercept) - np.min(line1_intercept)) / (3*2*(2*np.log(2))**.5)
+                            line0_intercept_left = np.array(line0_intercept)[np.where(line0_intercept < center_line_intercept)]
+                            line0_intercept_right = np.array(line0_intercept)[np.where(line0_intercept > center_line_intercept)]
+                            line1_intercept_left = np.array(line1_intercept)[np.where(line1_intercept < lower_line_intercept)]
+                            line1_intercept_right = np.array(line1_intercept)[np.where(line1_intercept > lower_line_intercept)]
+                            line2_intercept_left = np.array(line2_intercept)[np.where(line2_intercept < upper_line_intercept)]
+                            line2_intercept_right = np.array(line2_intercept)[np.where(line2_intercept > upper_line_intercept)]
+                            if (len(line0_intercept_left) >= 2 and len(line0_intercept_right) >= 2 and len(line1_intercept_left) >= 2 and len(line1_intercept_right) >= 2
+                            and len(line2_intercept_left) >= 2 and len(line2_intercept_right) >= 2):
+                                center_line_intercept = (np.mean(line0_intercept_left) + np.mean(line0_intercept_right)) / 2
+                                lower_line_intercept = (np.mean(line1_intercept_left) + np.mean(line1_intercept_right)) / 2
+                                upper_line_intercept = (np.mean(line2_intercept_left) + np.mean(line2_intercept_right)) / 2
 
-                            Y_center = 0 * xdata + center_line_intercept
-                            Y_upper = image.angle*xdata + upper_line_intercept
-                            Y_lower = -image.angle*xdata + lower_line_intercept
-                            image.intercept = lower_line_intercept
-                            image.intercept1 = center_line_intercept
-                            image.intercept2 = upper_line_intercept
-                            image.XY = zip(xdata, Y_lower)
-                            image.XY1 = zip(xdata, Y_center)
-                            image.XY2 = zip(xdata, Y_upper)
+                                sigma_center = (np.mean(line0_intercept_right) - np.mean(line0_intercept_left)) / (2*(2*np.log(2))**.5)
+                                sigma_lower = (np.mean(line1_intercept_right) - np.mean(line1_intercept_left)) / (2*(2*np.log(2))**.5)
+                                sigma_upper = (np.mean(line2_intercept_right) - np.mean(line2_intercept_left)) / (2*(2*np.log(2))**.5)
 
-                            image.Focus, point = image.calculate_focus(image.XY, image.XY1, image.XY2)
-                            sigma2_x, sigma2_y, image.focuserr = image.calculate_focus_error(image.angle, 0, -image.angle, 0, lower_line_intercept, sigma_lower, upper_line_intercept, sigma_upper, sigma_center)
+                                Y_center = 0 * xdata + center_line_intercept
+                                Y_upper = image.angle*xdata + upper_line_intercept
+                                Y_lower = -image.angle*xdata + lower_line_intercept
+                                image.intercept = lower_line_intercept
+                                image.intercept1 = center_line_intercept
+                                image.intercept2 = upper_line_intercept
+                                image.XY = zip(xdata, Y_lower)
+                                image.XY1 = zip(xdata, Y_center)
+                                image.XY2 = zip(xdata, Y_upper)
 
-                            if image.Focus != None:
-                                if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt'):
-                                    Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
-                                    values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
-                                    Results = np.vstack((Results, values))
-                                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
+                                image.Focus, point = image.calculate_focus(image.XY, image.XY1, image.XY2)
+                                sigma2_x, sigma2_y, image.focuserr = image.calculate_focus_error(image.angle, 0.0, -image.angle, 0.0, lower_line_intercept, sigma_lower, upper_line_intercept, sigma_upper, sigma_center)
 
+                                if image.Focus != None:
+                                    if os.path.exists(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt'):
+                                        Results = np.loadtxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt')
+                                        values = np.array([image.number, image.offset, image.Focus, image.focuserr, image.X, image.Y, image.SNR]).flatten()
+                                        Results = np.vstack((Results, values))
+                                        np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
+
+                                    else:
+                                        Results = np.zeros((1,7))
+                                        Results[0,0] = image.number ; Results[0,1] = image.offset
+                                        Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
+                                        Results[0,4] = image.X ; Results[0,5] = image.Y
+                                        Results[0,6] = image.SNR
+                                        np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
+
+                                    image.fig, image.axis = plt.subplots(figsize = (10,10))
+                                    image.axis.errorbar(point.x,point.y, yerr=sigma2_y**.5, xerr=sigma2_x**.5, color = 'r')
+                                    image.axis.imshow(image.data_new, cmap=cm.gray, norm = matplotlib.colors.LogNorm(vmin = 0.01, vmax = np.max(image.data_new)), origin = 'lower')
+                                    image.axis.scatter(image.x, image.y, color = 'r')
+                                    image.axis.set_xlim(0,len(image.data_new)) ; image.axis.set_ylim(0,len(image.data_new))
+                                    image.axis.set_xlabel('x') ; image.axis.set_ylabel('y')
+                                    image.axis.set_title('Bahtinov Source: %s (%.2f, %.2f)' %(image.name, image.X, image.Y))
+                                    image.axis.plot(zip(*image.XY)[0], zip(*image.XY)[1], color = 'b')
+                                    image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
+                                    image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'b')
+                                    image.axis.annotate('Axial distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(1, -.06), xycoords='axes fraction', fontsize=12, horizontalalignment='right', verticalalignment='bottom')
+                                    image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
+                                    plt.close()
+                                    fig, axes = plt.subplots(1,3, sharex=True, sharey=True)
+                                    ax = axes.ravel()
+                                    ax[0].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
+                                    ax[0].set_title('Input image')
+
+                                    ax[1].imshow(edges, cmap=cm.gray)
+                                    ax[1].set_title('Canny edges')
+                                    ax[2].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
+                                    for line in lines:
+                                        p0,p1 = line
+                                        ax[2].plot((p0[0],p1[0]), (p0[1],p1[1]))
+                                    ax[2].set_xlim((0, image.data_new.shape[1]))
+                                    ax[2].set_ylim((image.data_new.shape[0],0))
+                                    ax[2].set_title('Probabilistic Hough')
+
+                                    for a in ax:
+                                        a.set_axis_off()
+                                        a.set_adjustable('box-forced')
+                                    plt.tight_layout()
+
+                                    fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '_individual.png')
+                                    plt.close()
                                 else:
-                                    Results = np.zeros((1,7))
-                                    Results[0,0] = image.number ; Results[0,1] = image.offset
-                                    Results[0,2] = image.Focus ; Results[0,3] = image.focuserr
-                                    Results[0,4] = image.X ; Results[0,5] = image.Y
-                                    Results[0,6] = image.SNR
-                                    np.savetxt(image.workdir +'Focusrun/' + today_utc_date + '/Results/FocusResults.txt', Results, fmt = '%10.1f %10.1f %10.5f %10.5f %10.3f %10.3f %10.3f')
-                                image.fig, image.axis = plt.subplots(figsize = (10,10))
-                                image.axis.errorbar(point.x,point.y, yerr=sigma2_y**.5, xerr=sigma2_x**.5)
-                                image.axis.imshow(image.data_new, cmap=cm.gray, norm = matplotlib.colors.LogNorm(vmin = 0.01, vmax = np.max(image.data_new)), origin = 'lower')
-                                image.axis.scatter(image.x, image.y, color = 'r')
-                                image.axis.set_xlim(0,len(image.data_new)) ; image.axis.set_ylim(0,len(image.data_new))
-                                image.axis.set_xlabel('x') ; image.axis.set_ylabel('y')
-                                image.axis.set_title('Bahtinov Source: %s (%.2f, %.2f)' %(image.name, image.X, image.Y))
-                                image.axis.plot(zip(*image.XY)[0], zip(*image.XY)[1], color = 'r')
-                                image.axis.plot(zip(*image.XY1)[0], zip(*image.XY1)[1], color = 'g')
-                                image.axis.plot(zip(*image.XY2)[0], zip(*image.XY2)[1], color = 'r')
-                                image.axis.annotate('Axial distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(1, -.06), xycoords='axes fraction', fontsize=12, horizontalalignment='right', verticalalignment='bottom')
-                                image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
-                                plt.close()
-                                fig, axes = plt.subplots(1,3, sharex=True, sharey=True)
-                                ax = axes.ravel()
-                                ax[0].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
-                                ax[0].set_title('Input image')
-
-                                ax[1].imshow(edges, cmap=cm.gray)
-                                ax[1].set_title('Canny edges')
-                                ax[2].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
-                                for line in lines:
-                                    p0,p1 = line
-                                    ax[2].plot((p0[0],p1[0]), (p0[1],p1[1]))
-                                ax[2].set_xlim((0, image.data_new.shape[1]))
-                                ax[2].set_ylim((image.data_new.shape[0],0))
-                                ax[2].set_title('Probabilistic Hough')
-
-                                for a in ax:
-                                    a.set_axis_off()
-                                    a.set_adjustable('box-forced')
-                                plt.tight_layout()
-
-                                fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '_individual.png')
-                                plt.close()
+                                    image.star_counter += 1
                             else:
                                 image.star_counter += 1
                         else:

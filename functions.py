@@ -91,7 +91,7 @@ def func(x, a, x0, sigma):
 def gaussian(x, height, center, width, offset):
     return height*np.exp(-(x - center)**2/(2*width**2)) + offset
 
-def three_gaussians(x, h1, c1, w1, h2, c2, w2, h3, c3, w3, offset):
+def three_gaussians(x, h1, c1, w1, h2, c2, w2, h3, c3, w3, offset = 0):
     return (gaussian(x, h1, c1, w1, offset=0) +
         gaussian(x, h2, c2, w2, offset=0) +
         gaussian(x, h3, c3, w3, offset=0) + offset)
@@ -101,12 +101,12 @@ def two_gaussians(x, h1, c1, w1, h2, c2, w2, offset):
 
 def guassianresiduals(p, data):
     x, y = data
-    x, h1, c1, w1, h2, c2, w2, h3, c3, w3 = p
+    h1, c1, w1, h2, c2, w2, h3, c3, w3 = p
     return y - three_gaussians(x, *p)
 
 def lorentzian(x, pars):
-    A1 = pars[0] ; x01 = pars[1] ; w1 = pars[2]
-    f = A1*w1*2/((x-x01)**2+w1**2)
+    A = pars[0] ; x0 = pars[1] ; w = pars[2]
+    f = A*(w**2/((x-x0)**2+w**2))
     return f
 
 def ThreeLorentzian(x,*pars):
@@ -149,7 +149,6 @@ def linfit(p, x):
     return a + b*x
 
 def linfitresiduals(p, data):
-    a, b = p
     x, y, yerr = data
     w = yerr**2
     wi = np.sqrt(np.where(w==0.0, 0.0, 1.0/(w)))
