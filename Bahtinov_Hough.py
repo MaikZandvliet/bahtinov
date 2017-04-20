@@ -23,7 +23,6 @@ import subprocess
 import tiptilt
 from scipy import stats
 from matplotlib.lines import Line2D
-from matplotlib import cm
 from astropy.stats import sigma_clip
 from astropy.nddata import Cutout2D
 from astropy.io import fits
@@ -31,7 +30,7 @@ from kapteyn import kmpfit
 import matplotlib
 import matplotlib.pyplot as plt
 from astropy.stats import sigma_clipped_stats
-from matplotlib.pyplot import figure, show
+from matplotlib.pyplot import figure, show, cm
 from skimage.transform import (hough_line, hough_line_peaks,
                                probabilistic_hough_line)
 from scipy.optimize import curve_fit
@@ -43,7 +42,7 @@ today_utc_time = time.strftime('%c', time.gmtime(time.time()))
 
 '''
 Class Bahtinov
-    Has the end goal to calculate the focus on the CCD.
+    Has the end goal to calculate the axial defocus on the CCD.
     Some parameters have to be set manually to ensure a fit.
 '''
 class Bahtinov:
@@ -385,6 +384,7 @@ class Bahtinov:
                                     image.axis.annotate('Axial distance = %.2f $\pm$ %.3f $\\mu m$' %(image.Focus, image.focuserr), xy=(1, -.06), xycoords='axes fraction', fontsize=12, horizontalalignment='right', verticalalignment='bottom')
                                     image.fig.savefig(image.workdir +'Focusrun/' + today_utc_date + '/Plots/' + str(image.name) + '/' + str(image.name) + '_' + str(image.X) + '_' + str(image.Y) + '.png')
                                     plt.close()
+
                                     fig, axes = plt.subplots(1,3, sharex=True, sharey=True)
                                     ax = axes.ravel()
                                     ax[0].imshow(image.data_new, cmap = cm.gray, norm = matplotlib.colors.LogNorm(vmin=0.01, vmax = np.max(image.data_new)))
